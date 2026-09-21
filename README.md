@@ -55,18 +55,18 @@ IP 变更处理：告知管理员，由其在服务端更新 `access.json` 并�
 分发给同事应提供完整源码目录/源码压缩包及 `package-lock.json`。`npm pack --dry-run` 仅用于检查发布内容；npm 不把 package-lock.json 打进 tarball，因此 npm 打包产物不能替代这里要求的完整源码交付。
 
 ```powershell
-Set-Location -LiteralPath 'D:\team-mailbox'
+Set-Location -LiteralPath '<仓库路径>'
 node --version
 npm ci
 Copy-Item -LiteralPath '.\access.example.json' -Destination '.\access.json'
-$env:MSG_ACCESS_CONFIG = 'D:\team-mailbox\access.json'
-$env:MSG_DB_PATH = 'D:\team-mailbox\data\msg.sqlite'
+$env:MSG_ACCESS_CONFIG = '<仓库路径>\access.json'
+$env:MSG_DB_PATH = '<仓库路径>\data\msg.sqlite'
 npm run admin -- validate-config
 npm run admin -- list-members
 npm start
 ```
 
-复制前确认 `access.json` 不存在，已有配置不要覆盖。示例配置为：
+`<仓库路径>` 指你自己的源码目录；管理员（部署中心的人）填自己的实际路径。复制前确认 `access.json` 不存在，已有配置不要覆盖。示例配置为：
 
 ```json
 {
@@ -91,9 +91,9 @@ npm run doctor
 ```json
 {
   "transport": "stdio",
-  "command": "C:\\Program Files\\nodejs\\node.exe",
-  "args": ["D:\\team-mailbox\\src\\mcp.js"],
-  "env": { "MSG_SERVER_URL": "http://192.168.50.10:8787" }
+  "command": "<你自己的 node.exe 绝对路径>",
+  "args": ["<你自己的仓库路径>\\src\\mcp.js"],
+  "env": { "MSG_SERVER_URL": "http://192.168.11.40:18787" }
 }
 ```
 
