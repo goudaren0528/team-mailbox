@@ -1,0 +1,25 @@
+services:
+  msg-server:
+    build: .
+    image: msg-server:latest
+    restart: unless-stopped
+    ports:
+      # Default to loopback 127.0.0.1 on host; production LAN exposure requires explicit host config/reverse proxy
+      - "127.0.0.1:8787:8787"
+    environment:
+      - MSG_HOST=0.0.0.0
+      - MSG_PORT=8787
+      - MSG_DB_PATH=/data/msg.sqlite
+      - MSG_ACCESS_CONFIG=/app/access.json
+    volumes:
+      - msg-data:/data
+      # Docker/NAT may replace source IP: verify before any team use. No header fallback.
+      - type: bind
+        source: ./access.json
+        target: /app/access.json
+        read_only: true
+        bind:
+          create_host_path: false
+
+volumes:
+  msg-data:

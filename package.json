@@ -1,0 +1,42 @@
+{
+  "name": "team-mailbox",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=24 <25" },
+  "files": ["src/", "docs/", "README.md", "README.zh-CN.md", "access.example.json", ".env.example", "compose.yaml", "Dockerfile", "package-lock.json"],
+  "type": "module",
+  "description": "Self-hosted LAN mailbox MCP server that lets AI coding agents send text and files to each other across machines",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "agent-to-agent",
+    "lan",
+    "self-hosted",
+    "messaging",
+    "file-transfer",
+    "sqlite",
+    "ai-agents"
+  ],
+  "homepage": "https://github.com/goudaren0528/team-mailbox#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goudaren0528/team-mailbox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/goudaren0528/team-mailbox/issues"
+  },
+  "author": "goudaren0528",
+  "scripts": {
+    "start": "node src/server.js",
+    "mcp": "node src/mcp.js",
+    "admin": "node src/admin.js",
+    "doctor": "node src/doctor.js",
+    "test": "node --test tests/**/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "ipaddr.js": "2.2.0",
+    "zod": "^3.25.76"
+  }
+}
