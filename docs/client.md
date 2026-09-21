@@ -42,7 +42,7 @@ URL 仅支持 HTTP(S)，拒绝 userinfo、query、hash；禁止 redirect。路�
 - 响应的 `read` 表示**本次操作后**的状态，新增 `markedRead` 说明是否由本次调用触发。
 - `mark_read` 保留不变，用于不读正文直接批量标记。没有「标记为未读」，已读不可撤销。
 
-中心未升级时行为仍是旧的（读取不标已读）；bridge 端无需配置，行为由中心决定。
+自动已读发生在中心；中心升级后旧 bridge 也受影响，与是否安装侧栏无关。中心未升级时行为仍是旧的（读取不标已读）；bridge 端无需配置。
 
 ## 未读提醒（可选）
 
@@ -68,7 +68,7 @@ URL 仅支持 HTTP(S)，拒绝 userinfo、query、hash；禁止 redirect。路�
 
 只显示发件人、条数、附件数（附件为 0 时省略附件段），**不显示标题和正文**；无未读时整个区块不渲染、不占位；最多显示 10 行发件人，超出部分不再渲染，也不显示「还有 N 个」之类提示。
 
-安装（三步，细节见 `integrations/opencode/README.md`）：
+安装（三步，细节与老用户更新见[插件说明](../integrations/opencode/README.md)）：
 
 1. 把 `team-mailbox-unread.tsx` 和 `unread-core.mjs` **一起**复制到 OpenCode 插件目录，例如 `~/.config/opencode/plugins/`（Windows：`%USERPROFILE%\.config\opencode\plugins\`）。**两个文件必须在同一目录**，入口用相对路径导入 `./unread-core.mjs`。
 2. 在同级配置目录的 **`tui.json`**（不是 `opencode.json`）里显式声明：
@@ -76,19 +76,21 @@ URL 仅支持 HTTP(S)，拒绝 userinfo、query、hash；禁止 redirect。路�
    ```json
    {
      "$schema": "https://opencode.ai/tui.json",
-     "plugin": ["./plugins/team-mailbox-unread.tsx"]
+     "plugin": [["./plugins/team-mailbox-unread.tsx", {"serverUrl": "http://<central-host>:8787", "pollMs": 30000}]]
    }
    ```
 
-   插件是 `.tsx`，而 OpenCode 的自动扫描只匹配 `plugins/*.ts` 和 `*.js`，**不含 `.tsx`**，所以必须显式列出，否则不会被加载。路径相对于该 `tui.json` 所在目录；文件已存在时往 `plugin` 数组追加一项即可。`opencode.json` 的 `plugin` 键是给 server 侧插件用的，写在那里无效。
-3. 设置环境变量后重启 OpenCode。
+   插件是 `.tsx`，必须显式列出。路径相对于该 `tui.json` 所在目录；先备份文件，将已有 team-mailbox 项改为 tuple，缺少才新增，保留其他插件，不追加重复项。`opencode.json` 的 `plugin` 键是给 server 侧插件用的，写在那里无效。
+3. 将 `serverUrl` 替换为管理员提供的共享中心 HTTP(S) 地址，不是本机 localhost（除非自己就是中心），也不是 Node 或 bridge 路径。无需永久环境变量。完全退出重启 OpenCode，进入会话并展开侧栏；中心可达且有未读时至多约 30 秒显示，`total: 0` 时不显示。用 `get_unread_summary` 核对条数、`npm run doctor` 验证连接和身份。已在 1.18.31 用户确认显示，不保证未来版本。
+
+选项逐键优先于下列环境变量，只有缺省键才回退。显式非法选项停用插件，不会回退到其他中心。`serverUrl` 禁止凭据、query/hash，请求不跟随重定向；`pollMs` 必须为有限正数，最低 10000 毫秒，默认 30000。固定版本官方依据见 `integrations/opencode/README.md`。
 
 | 变量 | 必填 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `MSG_SERVER_URL` | 是 | 无 | 中心地址，例如 `http://<中心地址>:8787`。**未配置或不是合法 http/https URL 时插件不渲染任何内容，也不报错** |
+| `MSG_SERVER_URL` | 未配置 `serverUrl` 时需要 | 无 | 管理员提供的中心 HTTP(S) 地址；未配置或非法时不渲染 |
 | `MSG_UNREAD_POLL_MS` | 否 | `30000` | 轮询间隔毫秒，**最低 10000**，更低按 10000 处理；非法值回落 30000 |
 
-变量必须对**启动 OpenCode 的那个进程**可见：插件跑在 TUI 进程内，与 MCP bridge 是两个进程，**不共享** MCP 配置里的环境变量。
+变量必须对**启动 OpenCode 的那个进程**可见：`MCP.environment` 只给 MCP 子进程，不会回传给 TUI。推荐上面的 tuple 配置。
 
 插件直接 HTTP 调用中心的 `GET /api/unread-summary`，每次请求 5 秒超时。请求失败、超时、非 2xx、JSON 解析失败、字段缺失或类型不符时**静默跳过本轮并保留上一次成功结果**，不抛异常、不阻塞 OpenCode，也不在界面上标注结果已陈旧。
 

@@ -5,7 +5,8 @@
  * Registers a `sidebar_content` slot that polls the central service's
  * `GET /api/unread-summary` and renders one line per sender.
  *
- * Configuration (environment variables):
+ * Configuration: tui.json plugin options `serverUrl` / `pollMs` take priority.
+ * Environment fallback (only when the corresponding option is absent):
  *   MSG_SERVER_URL      base URL of the central service, e.g. http://<中心地址>:8787
  *                       when unset the plugin renders nothing and stays silent
  *   MSG_UNREAD_POLL_MS  poll interval in ms, default 30000, values below 10000
@@ -22,8 +23,7 @@ import {
   TITLE,
   buildSummaryUrl,
   fetchSummary,
-  normalizeBaseUrl,
-  resolvePollMs,
+  resolveConfig,
   toLines,
 } from "./unread-core.mjs"
 
@@ -112,12 +112,12 @@ function View(props: { api: TuiPluginApi; poller: ReturnType<typeof createPoller
   )
 }
 
-const tui: TuiPlugin = async (api) => {
-  const base = normalizeBaseUrl(process.env.MSG_SERVER_URL)
+const tui: TuiPlugin = async (api, options) => {
+  const config = resolveConfig(options, process.env)
   // Not configured: render nothing, report nothing.
-  if (!base) return
+  if (!config) return
 
-  const poller = createPoller(buildSummaryUrl(base), resolvePollMs(process.env.MSG_UNREAD_POLL_MS))
+  const poller = createPoller(buildSummaryUrl(config.baseUrl), config.pollMs)
   api.lifecycle.onDispose(() => {
     poller.stop()
   })
