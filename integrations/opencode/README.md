@@ -1,11 +1,11 @@
-# OpenCode 侧栏未读提醒插件
+# OpenCode 未读侧栏与消息阅读
 
 在 OpenCode TUI 的右侧栏常驻显示 team-mailbox 的未读消息概况。
 
 ```
-未读消息
+📬 未读消息 · 3
 甲  1 条
-乙  2 条 · 1 附件
+乙  2 条 · 📎 1 附件
 ```
 
 只显示发件人、条数、附件数，不显示标题和正文。无未读时整个区块不渲染、不占位。
@@ -44,9 +44,30 @@
 
 不装这个插件不影响消息收发，只是没有未读提醒。
 
+## 原生选择、默认收件与完整阅读
+
+安装文件映射（全局配置根为 `~/.config/opencode/`，项目级为 `<项目目录>/.opencode/`）：
+
+| 仓库内源文件 | 配置根内目标 |
+| --- | --- |
+| `skills/team-mailbox-read/` 整个文件夹 | `skills/team-mailbox-read/` |
+| `commands/team-mailbox-read.md` | `command/team-mailbox-read.md`（单数 command） |
+
+命令 `/team-mailbox-read` 按名称加载 Skill。由 Agent 调用原生 question，每页最多 10 条消息及导航/取消，保留真实 id，不用 Markdown 消息列表。默认未读、可切全部，尊重过滤；getmsg 按 id 升序，不是全局最新倒序。取消/翻页不读正文、不下载、不标读。未知自定义答案不猜 id。
+
+无需询问收件目录或配置 MSG_DOWNLOAD_DIR：每个用户运行的 bridge 根据自身 import.meta.url 定位包根，在首次保存时创建独立 downloads/，不受 Agent cwd 影响。启动/列消息不创建；文件占位、symlink/junction 或无权限明确失败。不要复制中心 downloads/。MCP 环境仅需管理员提供的共享地址，示意如下：
+
+```json
+{"MSG_SERVER_URL":"http://<central-host>:<port>"}
+```
+
+中心地址及端口由管理员提供，不是自己的 localhost（除非本机就是中心）。省略 path 强制自动命名、不覆盖；显式路径旧语义保留。高级 MSG_DOWNLOAD_DIR 可覆盖到已有绝对目录，不支持相对值；恢复默认时获准后仅清除本 MCP entry 的旧项，保留其他配置与旧文件。详见[保存契约](../../docs/tools.md)。选中后先保存校验再读全文，失败重试/明确跳过/取消，正文重试不重复下载。不自动打开或执行附件。
+
+Skill 属于 Agent 编排指令，不是运行时强制 UI；question 不可用时应说明并确认降级，不静默改回 Markdown。安装后完全退出重启 OpenCode。此处只定义安装契约，不授权 Agent 自行选择目录或改配置。
+
 ## 已安装用户更新
 
-在自己的仓库检查 `git status` 后运行 `git pull --ff-only`，有本地冲突或无法快进就停止处理，不强制覆盖。必须从更新后的仓库重新复制覆盖上述两个安装文件，单独 pull 不会更新已安装副本。先备份 `tui.json`，按安装步骤更新已有 tuple 项并保留其他插件，再完全退出重启。依赖未变，无需重新 `npm ci`、安装或切换 Node。可直接转发[主 README 的更新提示词](../../README.zh-CN.md)。
+在自己的仓库 git pull --ff-only，有冲突不强制覆盖；更新两个插件文件、Skill 与 command。无需新建目录配置；如存在旧 MSG_DOWNLOAD_DIR，展示移除该项的改动并获准，保留其他 env、tui tuple 和旧下载文件，完全退出重启。单独 pull 不更新插件安装副本。依赖未变，已有用户不需 npm ci，初装仍需。见[主 README 提示词](../../README.zh-CN.md)。
 
 ## 配置优先级与环境变量回退
 
@@ -68,11 +89,13 @@
 - [路径与 options](https://github.com/anomalyco/opencode/blob/014614d35b397775e5d397a490fc72368c894ec2/packages/opencode/src/config/plugin.ts)：`resolvePluginSpec` 保留 tuple 第二项，`pluginOptions` 返回它。
 - [TUI runtime](https://github.com/anomalyco/opencode/blob/014614d35b397775e5d397a490fc72368c894ec2/packages/opencode/src/plugin/tui/runtime.ts)：执行 `plugin.plugin(api, plugin.load.options, plugin.meta)`。本插件保留 `default { id, tui }` 导出。
 
-实际确认：用户已在 OpenCode **1.18.31** 上确认修复后侧栏正常显示。纯逻辑测试不替代终端验证，也不保证所有未来版本；新安装可按上述步骤核对，不要通过发送或标读消息制造验证数据。
+验证边界：此前配置修复曾由用户在 OpenCode **1.18.31** 确认显示，不代表本次视觉更新已获人工验收。本轮核心测试 59/59、插件纯逻辑 19/19；Skill 静态流程检查与 TSX 解析不等于真实 UI 验收。深浅主题、中文与窄栏仍需人工确认，不保证未来版本。
 
 ## 行为说明
 
 - 数据来源是中心服务的 `GET /api/unread-summary`，无参数，身份由来源 IP 判定。
+- 标题为 `📬 未读消息 · total`；标题与条数使用 theme.accent 加粗，发件人使用 theme.text，附件使用 theme.warning 显示 `📎 N 附件`。保留文字 fallback，不只依赖 emoji/颜色。
+- 无闪烁、声音、toast、自动弹选择框或点击自动收件；阅读由用户主动运行命令触发。
 - 发件人顺序由服务端按最新未读时间倒序给出，插件原样渲染，不重新排序。
 - 最多渲染 10 行发件人；超出部分直接不显示，**不显示「还有 N 个」之类的截断提示**。
 - 每次请求 5 秒超时。请求失败、超时、HTTP 非 2xx、JSON 解析失败、字段缺失或类型不符，一律静默跳过本轮并保留上一次成功结果；连续失败不会抛异常、不会阻塞 OpenCode。

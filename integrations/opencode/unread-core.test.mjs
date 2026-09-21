@@ -14,13 +14,17 @@ import {
   MAX_ROWS,
   MIN_POLL_MS,
   TITLE,
+  TITLE_ICON,
   buildSummaryUrl,
   fetchSummary,
+  formatTitle,
   formatSenderLine,
+  formatSenderRow,
   normalizeBaseUrl,
   parseSummary,
   resolvePollMs,
   resolveConfig,
+  toDisplayModel,
   toLines,
 } from "./unread-core.mjs"
 
@@ -35,6 +39,8 @@ const sender = (name, count, attachments, seconds) => ({
 
 test("title is fixed", () => {
   assert.equal(TITLE, "未读消息")
+  assert.equal(TITLE_ICON, "📬")
+  assert.equal(formatTitle({ total: 12 }), "📬 未读消息 · 12")
 })
 
 test("normal multi-sender payload parses and formats", () => {
@@ -48,7 +54,14 @@ test("normal multi-sender payload parses and formats", () => {
   assert.ok(summary)
   assert.equal(summary.total, 3)
   assert.equal(summary.attachments, 1)
-  assert.deepEqual(toLines(summary), ["甲  1 条", "乙  2 条 · 1 附件"])
+  assert.deepEqual(toLines(summary), ["甲  1 条", "乙  2 条 · 📎 1 附件"])
+  assert.deepEqual(toDisplayModel(summary), {
+    title: "📬 未读消息 · 3",
+    rows: [
+      { name: "甲", countText: "1 条", attachmentText: undefined },
+      { name: "乙", countText: "2 条", attachmentText: "📎 1 附件" },
+    ],
+  })
 })
 
 test("server ordering is preserved, never re-sorted", () => {
@@ -65,6 +78,7 @@ test("server ordering is preserved, never re-sorted", () => {
     ["先", "后"],
   )
   assert.deepEqual(toLines(summary), ["先  1 条", "后  2 条"])
+  assert.deepEqual(toDisplayModel(summary).rows.map((row) => row.name), ["先", "后"])
 })
 
 test("no unread renders nothing", () => {
@@ -72,6 +86,7 @@ test("no unread renders nothing", () => {
   assert.ok(summary)
   assert.deepEqual(summary.senders, [])
   assert.deepEqual(toLines(summary), [])
+  assert.equal(toDisplayModel(summary), undefined)
 })
 
 test("total 0 with a stray sender still renders nothing", () => {
@@ -97,9 +112,13 @@ test("more than 10 senders is truncated to 10 rows with no extra hint", () => {
     updatedAt: iso(20),
   })
   const lines = toLines(summary)
+  const model = toDisplayModel(summary)
   assert.equal(lines.length, MAX_ROWS)
+  assert.equal(model.rows.length, MAX_ROWS)
   assert.equal(lines[0], "人0  1 条")
   assert.equal(lines[9], "人9  10 条")
+  assert.deepEqual(model.rows[0], { name: "人0", countText: "1 条", attachmentText: undefined })
+  assert.deepEqual(model.rows[9], { name: "人9", countText: "10 条", attachmentText: undefined })
   assert.ok(!lines.some((line) => line.includes("还有")))
   assert.ok(!lines.some((line) => line.includes("...")))
   // Exactly 10 senders is not truncated.
@@ -108,7 +127,34 @@ test("more than 10 senders is truncated to 10 rows with no extra hint", () => {
 
 test("zero attachments omits the attachment segment", () => {
   assert.equal(formatSenderLine({ name: "甲", count: 1, attachments: 0 }), "甲  1 条")
-  assert.equal(formatSenderLine({ name: "甲", count: 4, attachments: 2 }), "甲  4 条 · 2 附件")
+  assert.equal(formatSenderLine({ name: "甲", count: 4, attachments: 2 }), "甲  4 条 · 📎 2 附件")
+  assert.deepEqual(formatSenderRow({ name: "甲", count: 1, attachments: 0 }), {
+    name: "甲",
+    countText: "1 条",
+    attachmentText: undefined,
+  })
+  assert.deepEqual(formatSenderRow({ name: "甲", count: 4, attachments: 2 }), {
+    name: "甲",
+    countText: "4 条",
+    attachmentText: "📎 2 附件",
+  })
+})
+
+test("Chinese names, counts and attachment text stay readable without relying on color", () => {
+  const summary = parseSummary({
+    total: 12,
+    attachments: 3,
+    senders: [sender("示例甲", 10, 2, 1), sender("示例乙", 2, 1, 2)],
+    updatedAt: iso(3),
+  })
+  assert.deepEqual(toLines(summary), ["示例甲  10 条 · 📎 2 附件", "示例乙  2 条 · 📎 1 附件"])
+  assert.deepEqual(toDisplayModel(summary), {
+    title: "📬 未读消息 · 12",
+    rows: [
+      { name: "示例甲", countText: "10 条", attachmentText: "📎 2 附件" },
+      { name: "示例乙", countText: "2 条", attachmentText: "📎 1 附件" },
+    ],
+  })
 })
 
 test("missing or mistyped fields discard the whole payload", () => {
@@ -294,14 +340,14 @@ test("consecutive failures keep the previous good result (caller contract)", asy
     ok: true,
     json: async () => ({ total: 2, attachments: 1, senders: [sender("甲", 2, 1, 1)], updatedAt: iso(2) }),
   }))
-  assert.deepEqual(toLines(last), ["甲  2 条 · 1 附件"])
+  assert.deepEqual(toLines(last), ["甲  2 条 · 📎 1 附件"])
 
   for (let i = 0; i < 5; i++) {
     await round(async () => {
       throw new Error("down")
     })
   }
-  assert.deepEqual(toLines(last), ["甲  2 条 · 1 附件"])
+  assert.deepEqual(toLines(last), ["甲  2 条 · 📎 1 附件"])
 
   await round(async () => ({
     ok: true,

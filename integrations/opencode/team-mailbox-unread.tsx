@@ -20,11 +20,10 @@
 import { createSignal, For, Show, onCleanup } from "solid-js"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import {
-  TITLE,
   buildSummaryUrl,
   fetchSummary,
   resolveConfig,
-  toLines,
+  toDisplayModel,
 } from "./unread-core.mjs"
 
 const ID = "team-mailbox-unread"
@@ -96,18 +95,32 @@ function View(props: { api: TuiPluginApi; poller: ReturnType<typeof createPoller
   onCleanup(release)
 
   const theme = () => props.api.theme.current
-  const lines = () => toLines(props.poller.summary())
+  const model = () => toDisplayModel(props.poller.summary())
 
   return (
-    <Show when={lines().length > 0}>
-      <box>
-        <box flexDirection="row" gap={1}>
-          <text fg={theme().text}>
-            <b>{TITLE}</b>
-          </text>
+    <Show when={model()} keyed>
+      {(current) => (
+        <box>
+          <box flexDirection="row" gap={1}>
+            <text fg={theme().accent}>
+              <b>{current.title}</b>
+            </text>
+          </box>
+          <For each={current.rows}>
+            {(row) => (
+              <box flexDirection="row" gap={1}>
+                <text fg={theme().text}>{row.name}</text>
+                <text fg={theme().accent}>
+                  <b>{row.countText}</b>
+                </text>
+                <Show when={row.attachmentText}>
+                  <text fg={theme().warning}>{row.attachmentText}</text>
+                </Show>
+              </box>
+            )}
+          </For>
         </box>
-        <For each={lines()}>{(line) => <text fg={theme().textMuted}>{line}</text>}</For>
-      </box>
+      )}
     </Show>
   )
 }

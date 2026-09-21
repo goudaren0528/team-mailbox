@@ -7,9 +7,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fixture, relay, cleanup, temp, sha256 } from './helpers.js';
 
-async function client(t, url) {
+async function client(t, url, env = {}) {
   const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve('src/mcp.js')],
-    env: { MSG_SERVER_URL: url, MSG_DEVICE_NAME: 'remark-only' }, stderr: 'pipe' });
+    env: { MSG_SERVER_URL: url, MSG_DEVICE_NAME: 'remark-only', MSG_DOWNLOAD_DIR: '', ...env }, stderr: 'pipe' });
   const sdk = new Client({ name: 'real-sdk-test', version: '1.0.0' });
   cleanup(t, async () => { await sdk.close(); await transport.close(); });
   await sdk.connect(transport);
@@ -20,6 +20,29 @@ async function call(sdk, name, args = {}) {
   assert.ok(!res.isError, res.content?.[0]?.text);
   return JSON.parse(res.content[0].text);
 }
+
+test('SDK default inbox schema, concurrent saves and failures do not mark messages read', async t => {
+  const f = await fixture(t); const dir = temp(t);
+  const a = await client(t, await relay(t, f.url, '127.0.0.1'));
+  const url = await relay(t, f.url, '127.0.0.2');
+  const b = await client(t, url, { MSG_DOWNLOAD_DIR: dir });
+  const unset = await client(t, url, { MSG_DOWNLOAD_DIR: path.join(dir, 'missing-override') });
+  const schema = (await b.listTools()).tools.find(tool => tool.name === 'save_attachment').inputSchema;
+  assert.deepEqual(schema.required, ['attachment_id']);
+  const sent = await call(a, 'send_file', { to: 'B', path: path.resolve('package.json') });
+  const args = { attachment_id: sent.attachment.id };
+  assert.equal((await unset.callTool({ name: 'save_attachment', arguments: args })).isError, true);
+  const results = await Promise.all(Array.from({ length: 8 }, () => call(b, 'save_attachment', { ...args, overwrite: true })));
+  assert.equal(new Set(results.map(r => r.path)).size, 8);
+  assert.ok(results.every(r => r.autoNamed && !r.overwritten));
+  assert.equal((await call(b, 'get_unread_summary')).total, 1, 'saving never reads the empty body');
+  // A directory at an explicit file target forces final publication to fail.
+  assert.equal((await b.callTool({ name: 'save_attachment', arguments: { ...args, path: dir, overwrite: true } })).isError, true);
+  assert.equal((await b.callTool({ name: 'save_attachment', arguments: { attachment_id: 999999 } })).isError, true);
+  assert.equal((await call(b, 'get_unread_summary')).total, 1, 'download/write failures do not mark read');
+  assert.equal(fs.readdirSync(dir).length, 8, 'failure staging cleaned');
+  assert.equal((await call(b, 'read_message', { id: sent.id })).markedRead, true);
+});
 
 test('Real SDK stdio A/B/C via real source-bound relays, five tools and prefix', async t => {
   const f = await fixture(t);

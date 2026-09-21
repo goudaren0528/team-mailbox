@@ -1,5 +1,6 @@
 node_modules
 data
+downloads/
 .test-tmp
 .npm-cache
 access.json

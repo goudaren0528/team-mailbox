@@ -22,6 +22,7 @@ export const CONFIG = {
   serverUrl: process.env.MSG_SERVER_URL || 'http://127.0.0.1:8787',
   accessConfig: process.env.MSG_ACCESS_CONFIG || path.resolve('./access.json'),
   deviceName: process.env.MSG_DEVICE_NAME || '',
+  downloadDir: process.env.MSG_DOWNLOAD_DIR || '', // Optional existing absolute override; otherwise package-root downloads/.
   maxBodyBytes: 64 * 1024, // 64 KB
   maxTextChars: 32_000,
   maxTitleChars: 100,
