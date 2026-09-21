@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { createServer } from '../src/server.js';
 
 export const accessConfig = {
@@ -53,7 +54,9 @@ export async function fixture(t, config = accessConfig, host = '127.0.0.1') {
   };
 }
 
-export function request(url, localAddress = '127.0.0.1', method = 'GET', body, headers = {}) {
+// timeoutMs is raised only by attachment cases; multi-MiB bodies legitimately
+// take longer than the 5s that suits text traffic.
+export function request(url, localAddress = '127.0.0.1', method = 'GET', body, headers = {}, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const raw = body === undefined ? undefined : JSON.stringify(body);
     const req = http.request(url, { localAddress, method, agent: false,
@@ -64,9 +67,20 @@ export function request(url, localAddress = '127.0.0.1', method = 'GET', body, h
       res.on('end', () => { try { resolve({ status: res.statusCode, data: JSON.parse(text) }); } catch (err) { reject(err); } });
     });
     req.on('error', reject);
-    req.setTimeout(5000, () => req.destroy(new Error('Test request timed out')));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('Test request timed out')));
     req.end(raw);
   });
+}
+
+export function sha256(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+// Builds a well-formed attachment payload; individual tests override one field
+// at a time so each assertion isolates exactly one rule.
+export function attachmentPayload(name, contents, overrides = {}) {
+  const data = Buffer.isBuffer(contents) ? contents : Buffer.from(contents, 'utf8');
+  return { name, data_base64: data.toString('base64'), sha256: sha256(data), ...overrides };
 }
 
 // Test-only relay gives each real SDK process a different real TCP source.

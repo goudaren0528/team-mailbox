@@ -16,6 +16,48 @@ export const displayNameSchema = z
   .min(1, 'Display name cannot be empty')
   .max(CONFIG.maxDisplayNameChars, `Display name cannot exceed ${CONFIG.maxDisplayNameChars} characters`);
 
+// Path separators and control characters are removed so a sender can never
+// steer where the recipient's bridge writes the file. Over-long names are
+// rejected rather than truncated: silently renaming a file is worse than a
+// clear 400, and truncation could also collide with an existing local file.
+export function sanitizeAttachmentName(raw) {
+  if (typeof raw !== 'string') return null;
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.replace(/[\u0000-\u001f\u007f/\\]/g, '').trim();
+  if (cleaned.length === 0) return null;
+  if (cleaned === '.' || cleaned === '..') return null;
+  return cleaned;
+}
+
+const base64Schema = z
+  .string({ required_error: 'attachment.data_base64 is required' })
+  .min(1, 'attachment.data_base64 cannot be empty')
+  .refine((value) => /^[A-Za-z0-9+/]*={0,2}$/.test(value) && value.length % 4 === 0,
+    'attachment.data_base64 must be standard base64');
+
+export const attachmentSchema = z.object({
+  name: z
+    .string({ required_error: 'attachment.name is required' })
+    .min(1, 'attachment.name cannot be empty')
+    .max(CONFIG.maxAttachmentNameChars,
+      `attachment.name cannot exceed ${CONFIG.maxAttachmentNameChars} characters`)
+    .transform(sanitizeAttachmentName)
+    .refine((value) => value !== null,
+      'attachment.name must contain characters other than path separators or control characters'),
+  mime: z
+    .string()
+    .trim()
+    .max(CONFIG.maxAttachmentMimeChars,
+      `attachment.mime cannot exceed ${CONFIG.maxAttachmentMimeChars} characters`)
+    .optional()
+    .nullable(),
+  data_base64: base64Schema,
+  sha256: z
+    .string({ required_error: 'attachment.sha256 is required' })
+    .regex(/^[0-9a-fA-F]{64}$/, 'attachment.sha256 must be 64 hexadecimal characters')
+    .transform((value) => value.toLowerCase()),
+}).strict();
+
 export const sendMessageSchema = z.object({
   to: memberNameSchema,
   title: z
@@ -24,10 +66,15 @@ export const sendMessageSchema = z.object({
     .max(CONFIG.maxTitleChars, `Title cannot exceed ${CONFIG.maxTitleChars} characters`)
     .optional()
     .nullable(),
+  // Optional only when an attachment is present; the object-level refinement below
+  // keeps the old "text is required" contract for plain text messages.
   text: z
-    .string({ required_error: 'Message text is required' })
+    .string()
     .min(1, 'Message text cannot be empty')
-    .max(CONFIG.maxTextChars, `Message text cannot exceed ${CONFIG.maxTextChars} characters`),
+    .max(CONFIG.maxTextChars, `Message text cannot exceed ${CONFIG.maxTextChars} characters`)
+    .optional()
+    .nullable(),
+  attachment: attachmentSchema.optional().nullable(),
   project: z
     .string()
     .trim()
@@ -40,6 +87,18 @@ export const sendMessageSchema = z.object({
     .positive('reply_to must be a positive message ID')
     .optional()
     .nullable(),
+}).refine((value) => (value.text != null && value.text !== '') || value.attachment != null,
+  { message: 'Message text is required when no attachment is provided', path: ['text'] });
+
+export const attachmentTextQuerySchema = z.object({
+  offset: z.coerce.number().int().nonnegative('offset must be non-negative').default(0),
+  limit: z
+    .coerce
+    .number()
+    .int()
+    .min(1)
+    .max(CONFIG.maxReadChunkLimit)
+    .default(CONFIG.defaultReadChunkLimit),
 });
 
 export const getMsgQuerySchema = z.object({

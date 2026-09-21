@@ -1,9 +1,10 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { CONFIG } from './config.js';
-import { initDb, syncMembers, insertMessage, getMessageById, queryMessages, markMessagesRead } from './db.js';
+import { initDb, syncMembers, insertMessage, getMessageById, getAttachmentById, queryMessages, markMessagesRead } from './db.js';
 import { loadAccessConfig } from './access.js';
-import { sendMessageSchema, getMsgQuerySchema, readMessageQuerySchema, markReadSchema } from './validation.js';
+import { sendMessageSchema, getMsgQuerySchema, readMessageQuerySchema, markReadSchema, attachmentTextQuerySchema } from './validation.js';
 
 function sendJson(res, statusCode, data) {
   const json = JSON.stringify(data);
@@ -43,9 +44,9 @@ function parseJsonBody(req, maxBytes = CONFIG.maxBodyBytes) {
         return resolve({});
       }
       try {
-        const raw = Buffer.concat(chunks).toString('utf8');
-        const parsed = JSON.parse(raw);
-        resolve(parsed);
+        const buffer = Buffer.concat(chunks);
+        req.receivedBodyBytes = buffer.length;
+        resolve(JSON.parse(buffer.toString('utf8')));
       } catch {
         const err = new Error('Invalid JSON payload');
         err.statusCode = 400;
@@ -57,6 +58,44 @@ function parseJsonBody(req, maxBytes = CONFIG.maxBodyBytes) {
       reject(err);
     });
   });
+}
+
+// Decodes and fully verifies an attachment payload. Returns { error } instead of
+// throwing so the caller can pick 400 (bad input) vs 413 (too large).
+function decodeAttachment(attachment) {
+  const data = Buffer.from(attachment.data_base64, 'base64');
+  // Buffer.from is lenient; a round-trip catches truncated or non-canonical input
+  // that the character-class check alone would accept.
+  if (data.toString('base64') !== attachment.data_base64) {
+    return { error: { status: 400, message: 'attachment.data_base64 is not valid base64' } };
+  }
+  if (data.length === 0) {
+    return { error: { status: 400, message: 'Attachment is empty (0 bytes)' } };
+  }
+  if (data.length > CONFIG.maxAttachmentBytes) {
+    return {
+      error: {
+        status: 413,
+        message: `Attachment is ${data.length} bytes, exceeding the ${CONFIG.maxAttachmentBytes} byte limit`,
+      },
+    };
+  }
+  // Integrity is re-derived server-side; the client-supplied digest is only a claim.
+  const sha256 = crypto.createHash('sha256').update(data).digest('hex');
+  if (sha256 !== attachment.sha256) {
+    return { error: { status: 400, message: 'Attachment SHA-256 mismatch; please resend' } };
+  }
+  return { value: { name: attachment.name, mime: attachment.mime ?? null, sha256, data } };
+}
+
+// Preview eligibility is a usability guard, not a security boundary: MIME and
+// extension are both sender-controlled, so previewing only ever returns bytes
+// the recipient is already entitled to download.
+function isPreviewableText(row) {
+  if (row.size > CONFIG.maxAttachmentPreviewBytes) return false;
+  const lowerName = row.name.toLowerCase();
+  if (CONFIG.textAttachmentExtensions.some((ext) => lowerName.endsWith(ext))) return true;
+  return typeof row.mime === 'string' && row.mime.toLowerCase().startsWith('text/');
 }
 
 export function createServer(options = {}) {
@@ -97,7 +136,10 @@ export function createServer(options = {}) {
 
       // POST /api/messages
       if (method === 'POST' && pathname === '/api/messages') {
-        const body = await parseJsonBody(req);
+        // Only this endpoint accepts attachments, so only it reads up to 16 MiB.
+        // A body without an attachment still has to fit the ordinary 64 KiB
+        // budget, which is enforced after parsing (see below).
+        const body = await parseJsonBody(req, CONFIG.maxAttachmentBodyBytes);
         const parsed = sendMessageSchema.safeParse(body);
         if (!parsed.success) {
           return sendJson(res, 400, {
@@ -107,6 +149,21 @@ export function createServer(options = {}) {
         }
 
         const msgData = parsed.data;
+
+        if (!msgData.attachment && req.receivedBodyBytes > CONFIG.maxBodyBytes) {
+          return sendJson(res, 413, {
+            error: `Payload too large. Maximum size is ${CONFIG.maxBodyBytes} bytes.`,
+          });
+        }
+
+        let attachmentRecord = null;
+        if (msgData.attachment) {
+          const decoded = decodeAttachment(msgData.attachment);
+          if (decoded.error) {
+            return sendJson(res, decoded.error.status, { error: decoded.error.message });
+          }
+          attachmentRecord = decoded.value;
+        }
 
         // Check if recipient exists and is active
         if (!access.hasMember(msgData.to)) {
@@ -143,15 +200,19 @@ export function createServer(options = {}) {
           from: req.member.name,
           to: msgData.to,
           title: msgData.title,
-          text: msgData.text,
+          // messages.text stays NOT NULL; file-only messages store an empty string
+          // so the existing table never has to be rebuilt.
+          text: msgData.text ?? '',
           project: msgData.project,
           replyTo: msgData.reply_to,
           deviceName,
+          attachment: attachmentRecord,
         });
 
         return sendJson(res, 201, {
           id: inserted.id,
           createdAt: inserted.createdAt,
+          ...(inserted.attachment ? { attachment: inserted.attachment } : {}),
         });
       }
 
@@ -223,6 +284,68 @@ export function createServer(options = {}) {
           limit,
           hasMore,
           text: textChunk,
+          attachment: msg.attachment,
+        });
+      }
+
+      // GET /api/attachments/:id — metadata plus base64 content, recipient only.
+      const attachmentMatch = pathname.match(/^\/api\/attachments\/(\d+)$/);
+      if (method === 'GET' && attachmentMatch) {
+        const row = getAttachmentById(db, parseInt(attachmentMatch[1], 10));
+        if (!row) return sendJson(res, 404, { error: 'Attachment not found' });
+        // Senders are denied too (decision C3). The message is identical to the
+        // third-party case so neither can probe for another member's files.
+        if (row.to !== req.member.name) {
+          return sendJson(res, 403, { error: 'Forbidden: access restricted to message recipient' });
+        }
+        return sendJson(res, 200, {
+          id: row.id,
+          messageId: row.messageId,
+          name: row.name,
+          size: row.size,
+          mime: row.mime,
+          sha256: row.sha256,
+          createdAt: row.createdAt,
+          data_base64: Buffer.from(row.data).toString('base64'),
+        });
+      }
+
+      // GET /api/attachments/:id/text — paginated preview for text-like files only.
+      const attachmentTextMatch = pathname.match(/^\/api\/attachments\/(\d+)\/text$/);
+      if (method === 'GET' && attachmentTextMatch) {
+        const parsed = attachmentTextQuerySchema.safeParse(Object.fromEntries(parsedUrl.searchParams.entries()));
+        if (!parsed.success) {
+          return sendJson(res, 400, {
+            error: 'Validation failed',
+            details: parsed.error.issues.map((i) => i.message),
+          });
+        }
+
+        const row = getAttachmentById(db, parseInt(attachmentTextMatch[1], 10));
+        if (!row) return sendJson(res, 404, { error: 'Attachment not found' });
+        if (row.to !== req.member.name) {
+          return sendJson(res, 403, { error: 'Forbidden: access restricted to message recipient' });
+        }
+        if (!isPreviewableText(row)) {
+          return sendJson(res, 400, {
+            error: `Attachment is not previewable as text (binary type or larger than ${CONFIG.maxAttachmentPreviewBytes} bytes); use save_attachment instead`,
+          });
+        }
+
+        const { offset, limit } = parsed.data;
+        const text = Buffer.from(row.data).toString('utf8');
+        const totalLength = text.length;
+        return sendJson(res, 200, {
+          id: row.id,
+          name: row.name,
+          size: row.size,
+          mime: row.mime,
+          sha256: row.sha256,
+          totalLength,
+          offset,
+          limit,
+          hasMore: offset + limit < totalLength,
+          text: text.slice(offset, offset + limit),
         });
       }
 

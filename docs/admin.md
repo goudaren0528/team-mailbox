@@ -10,6 +10,7 @@
 | `MSG_PORT` | `8787` |
 | `MSG_DB_PATH` | 当前工作目录下 `data/msg.sqlite` |
 | `MSG_ACCESS_CONFIG` | 当前工作目录下 `access.json` |
+| `MSG_MAX_ATTACHMENT_BYTES` | `10485760`（10 MiB）单个附件原始字节上限 |
 
 推荐 DB 和配置均使用绝对路径。`.env` 不自动加载；PowerShell `$env:变量 = '值'` 只影响当前终端及后续子进程。原生中心前台 Ctrl+C 停止，长期托管由管理员采用现有进程管理方式，本项目不提供专用安装器。
 
@@ -28,7 +29,7 @@
 }
 ```
 
-一个成员可对应多 IP；所有这些 IP 共享同一收件箱和已读。成员名经 trim 后允许 Unicode 字母/数字、下划线、连字符，1–32 个 UTF-16 码元。没有 displayName 配置字段，API 为兼容五工具结果返回 displayName=name。
+一个成员可对应多 IP；所有这些 IP 共享同一收件箱和已读。成员名经 trim 后允许 Unicode 字母/数字、下划线、连字符，1–32 个 UTF-16 码元。没有 displayName 配置字段，API 为兼容工具结果返回 displayName=name。
 
 校验采用成熟 `ipaddr.js` 解析和 CIDR 匹配，使用 Node `net.isIP` 拒绝缩写/八进制 IPv4。IPv4-mapped IPv6 规范化到 IPv4，因此 `127.0.0.1` 与 `::ffff:127.0.0.1` 不能重复绑定；同一成员内重复也失败。无 zone 的标准 IPv6 可用；mapped CIDR 必须至少 /96，再换算为 IPv4 前缀。配置字段严格校验，不接受任意额外身份字段。
 
@@ -68,11 +69,37 @@ npm run admin -- list-members
 
 1. **升级前先备份**现有 DB 和部署参数，创建并校验新 access.json。为需要保留收件箱的成员使用原 name；新配置是唯一授权来源，旧数据库的 revoked_at 不再决定访问权限。
 2. 停止旧服务、替换源码和 lockfile、Node 24 下 `npm ci`，设置同一 DB 路径及新 access.json。
-3. 新中心启动时先验证配置，再开启 DB；schema 初始化/迁移在事务中执行，**删除旧 tokens 表及其索引**，保留 members 历史行与 messages。消息 id、文本、项目、reply_to、read_at、创建时间和自增序列不重写。新配置缺少的旧成员仍保留用于外键，但不能访问或成为新收件人。
+3. 新中心启动时先验证配置，再开启 DB；schema 初始化/迁移在事务中执行，**删除旧 tokens 表及其索引**，保留 members 历史行与 messages。消息 id、文本、项目、reply_to、read_at、创建时间和自增序列不重写。新配置缺少的旧成员仍保留用于外键，但不能访问或成为新收件人。启用附件的版本还会在同一事务中新建 `attachments` 表（`CREATE TABLE IF NOT EXISTS`）；**`messages` 表定义本身不变**，历史行逐行保持原状。
 4. 将新配置成员 INSERT OR IGNORE 到历史 members 表；当前 peers 从配置返回。旧 display_name/revoked_at 只作历史兼容列，不当授权。
 5. 核对 doctor、当前成员、历史消息以及受控收发。未来未知 schema 升级不能据此保证自动兼容；当前只明确支持仓库旧版到本 IP 方案的迁移。
 
 迁移不丢消息，但不能直接用旧程序回滚到已删除凭据表的新 DB。要回滚旧版本，须停服后恢复**升级前备份及旧代码**，会失去备份后的新消息；先确认业务接受该回退边界。不要让旧、新中心同时打开同一 DB。
+
+## 附件存储与容量
+
+附件二进制**直接存在 SQLite 的 `attachments` 表 BLOB 列**，不落地为独立文件，也不依赖对象存储或文件服务器。表结构 `attachments(id, message_id, name, size, mime, sha256, data, created_at)`，`message_id` 外键指向 `messages(id)` 并带唯一约束，因此**一条消息最多一个附件**。
+
+升级采用 `CREATE TABLE IF NOT EXISTS` 增量建表：**不重建 `messages`、不迁移历史数据**，旧库的消息、id、已读状态、回复关系全部原样保留；`messages.text` 仍是 `NOT NULL`，纯文件消息写入空字符串。
+
+**容量会随附件增长。** 每 100 个 10 MiB 附件约 1 GB，直接反映为 DB 文件体积、备份耗时和备份占用空间。部署前确认数据盘余量，并定期检查 DB 大小：
+
+```powershell
+Get-Item -LiteralPath '<仓库路径>\data\msg.sqlite' | Select-Object Length
+```
+
+**一期永久保留附件，没有任何自动清理。** 也没有 `list-attachments` / `prune-attachments` 等 admin 附件命令——admin 只有 `validate-config`、`list-members`、`backup` 三个命令。需要回收空间只能由管理员人工介入（停服、备份后用 SQL 删除并 VACUUM），本文不提供该流程，操作前须自行验证。
+
+`MSG_MAX_ATTACHMENT_BYTES` **只能调小，不能调大**：超过默认 10 MiB 的值，以及 0、负数、非整数、无法解析的值，都会**静默回退到 10 MiB 默认值**而不是报错。这是刻意设计——含附件的请求体上限固定为 16 MiB（10 MiB 原文 base64 后约 13.4 MiB 加 JSON 开销），放大附件上限会超出该预算。需要更严格时可下调，例如限制为 1 MiB：
+
+```powershell
+$env:MSG_MAX_ATTACHMENT_BYTES = '1048576'
+```
+
+该值在进程启动时读取，修改后需重启中心。它只约束新上传，不影响已入库附件。
+
+单写者 SQLite 下，10 MiB 附件写入期间会短暂占用写锁（busy timeout 5 秒），多人同时传大文件可能拖慢文本消息；一期靠团队规模自然限流，没有并发限制。单次上传的中心内存峰值约为原始文件的 3 倍（原始 + base64 + JSON 字符串）。
+
+附件与消息同权限：只有收件人可下载，**发送人请求自己发出的附件也返回 403**。DB 备份含全部附件明文，和消息一样必须限制文件访问。
 
 ## 备份：VACUUM INTO
 
@@ -82,6 +109,8 @@ npm run admin -- backup 'D:\msg-backups\msg-20260920-01.sqlite'
 ```
 
 admin backup 只读打开既有源 DB，不初始化/迁移；实际执行 SQLite `VACUUM INTO ?` 创建一致的独立数据库文件。目标必须不存在（拒绝覆盖），缺父目录会创建。可在线备份，注意空闲空间、权限和锁等待，繁忙时可失败后选择低峰重试。不是热复制运行中的主 DB。
+
+因为附件存在 BLOB 列里，**`VACUUM INTO` 仍然是单文件备份，一个文件即含全部附件**，没有需要另行同步的附件目录。代价是**备份文件体积随附件增长、备份耗时变长、所需空闲空间变大**——`VACUUM INTO` 期间源库和目标文件同时存在，预留空间应按 DB 当前体积再加一份估算。繁忙或附件较多时优先安排低峰执行。
 
 备份 JSON 映射和部署参数需单独保存，DB 备份不包含 access.json。所有备份含明文消息，应限制文件访问。用以下命令检查产物：
 
