@@ -237,6 +237,43 @@ export function queryMessages(db, { to, from, unreadOnly, project, cursor, limit
   return { messages, nextCursor, hasMore };
 }
 
+// Counts-only view for the always-visible sidebar: it deliberately selects no text,
+// title, project or message id, so a permanently rendered panel can never leak
+// content. One grouped scan drives the whole response — the WHERE clause matches the
+// leading columns of idx_messages_to_unread(to_name, read_at, id), and the totals are
+// folded from the same rows instead of issuing extra queries.
+export function getUnreadSummary(db, { to }) {
+  const rows = db.prepare(`
+    SELECT m.from_name as name,
+           COUNT(*) as count,
+           COUNT(a.id) as attachments,
+           MAX(m.created_at) as latestTime,
+           MAX(m.id) as latestId
+    FROM messages m
+    LEFT JOIN attachments a ON a.message_id = m.id
+    WHERE m.to_name = ? AND m.read_at IS NULL
+    GROUP BY m.from_name
+    ORDER BY latestTime DESC, latestId DESC
+  `).all(to);
+
+  let total = 0;
+  let attachments = 0;
+  // latestId only breaks ties between messages stored in the same millisecond; it is
+  // never returned, because the contract promises no ids.
+  const senders = rows.map((row) => {
+    total += row.count;
+    attachments += row.attachments;
+    return {
+      name: row.name,
+      count: row.count,
+      attachments: row.attachments,
+      latestTime: row.latestTime,
+    };
+  });
+
+  return { total, attachments, senders, updatedAt: new Date().toISOString() };
+}
+
 export function markMessagesRead(db, { to, ids }) {
   if (!ids || ids.length === 0) {
     return { markedCount: 0, ids: [] };

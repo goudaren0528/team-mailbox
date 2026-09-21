@@ -51,17 +51,24 @@ test('A/B/C messages: isolation, explicit read, pagination, filtering, limits, d
   let joined = ''; let offset = 0;
   do {
     const chunk = (await call('127.0.0.2', `/api/messages/${id}?offset=${offset}&limit=77`)).data;
-    assert.equal(chunk.read, false); joined += chunk.text;
+    // Intermediate pages leave the message unread; only the final page marks it.
+    assert.equal(chunk.read, chunk.hasMore ? false : true);
+    assert.equal(chunk.markedRead, chunk.hasMore ? false : true);
+    joined += chunk.text;
     if (!chunk.hasMore) break;
     offset += chunk.limit;
   } while (true);
   assert.equal(joined, text);
-  assert.equal((await call('127.0.0.2', '/api/messages?unread_only=true')).data.messages.length, 2);
+  // The paged read above consumed this message's unread state; only the second remains.
+  assert.equal((await call('127.0.0.2', '/api/messages?unread_only=true')).data.messages.length, 1);
   // reply_to was removed; an unknown field is rejected only by the attachment
   // sub-schema, so at top level it is simply ignored and never stored.
   assert.equal((await send('127.0.0.2', { to: 'A', text: 'plain', reply_to: id })).status, 201);
   assert.equal(f.app.db.prepare('SELECT COUNT(*) as n FROM messages WHERE reply_to IS NOT NULL').get().n, 0);
-  assert.equal((await call('127.0.0.2', '/api/messages/mark-read', { ids: [id, id] })).data.markedCount, 1);
+  // Explicit mark_read is unchanged: it still dedupes, is idempotent, and now also
+  // returns 0 for a message the paged read already marked.
+  assert.equal((await call('127.0.0.2', '/api/messages/mark-read', { ids: [second.data.id, second.data.id] })).data.markedCount, 1);
+  assert.equal((await call('127.0.0.2', '/api/messages/mark-read', { ids: [second.data.id] })).data.markedCount, 0);
   assert.equal((await call('127.0.0.2', '/api/messages/mark-read', { ids: [id] })).data.markedCount, 0);
   for (const body of [{ to: 'B', text: '' }, { to: 'B', text: 'x'.repeat(32001) }, { to: 'B', text: 'ok', title: 'x'.repeat(101) }]) {
     assert.equal((await send('127.0.0.1', body)).status, 400);

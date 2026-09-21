@@ -57,7 +57,7 @@
 | 真实 SDK stdio 全链路 | `tests/e2e-mcp.test.js`：`send_file` → `getmsg`（`[文件]` 摘要与 attachment 元数据）→ `save_attachment` → `read_attachment_text` 分段拼接还原；含拒绝覆盖、`overwrite:true` 覆盖、相对路径、父目录缺失、发送人与第三方 403、二进制可保存不可预览 |
 | 附件 30 秒 / 文本 10 秒超时分级 | 同上，受控慢响应服务延迟 11 秒，断言预览在 11 秒前失败而下载成功且哈希一致 |
 
-本机真实自测（非自动化）：通过重启后的中心（PID 30432，`127.0.0.1:18787`，身份洪伟填）完成 `send_file` → `getmsg` 显示 `[文件] 文件名` → `read_attachment_text` 分段预览 → `save_attachment` 保存且 SHA-256 一致 → 默认拒绝覆盖、`overwrite:true` 可覆盖 → 10 MiB+1 被拒。
+本机真实自测（非自动化）：通过重启后的中心（本机 loopback 地址，身份为管理员本人）完成 `send_file` → `getmsg` 显示 `[文件] 文件名` → `read_attachment_text` 分段预览 → `save_attachment` 保存且 SHA-256 一致 → 默认拒绝覆盖、`overwrite:true` 可覆盖 → 10 MiB+1 被拒。
 
 ### 与 PRD 的三处偏差（已确认保留）
 
@@ -72,6 +72,45 @@
 - **并发大文件未测**：多人同时上传 10 MiB 时的写锁争用、busy timeout 与文本消息延迟，均未做压力或并发测试。
 - **长期容量未测**：附件永久保留下 DB 增长、备份耗时变化没有长期运行数据，仅按每 100 个 10 MiB 约 1 GB 估算。
 - 文档由独立文档轮次更新，未做端到端"照文档操作"走查。
+
+## 未读提醒验证（2026-09-21）
+
+在既有 41 项测试保持全绿的前提下新增未读汇总接口、读到末尾自动已读和 `get_unread_summary` 工具，`npm test` 最终 **47/47 通过、0 失败、0 跳过，约 24.5 秒**（Node 24、Windows PowerShell）。新增用例为 `tests/unread.test.js`（5 项）与 `tests/e2e-mcp.test.js`（1 项）。测试一律使用临时 DB 和临时端口（`listen(0)`），未连接也未重启当时运行中的中心服务。
+
+服务端与 MCP 工具由实现轮次完成，侧栏插件由独立插件轮次完成，两者证据分列如下。
+
+| 承诺 | 证据 |
+| --- | --- |
+| 多发件人聚合、附件计数、无未读 `total` 为 0 | `tests/unread.test.js`，含 `senders` 按最新未读时间倒序断言 |
+| 汇总不含正文/标题/project/消息 id | 同上，断言顶层与 `senders` 元素的**键集合完全相等**，另扫描序列化结果不含正文与标签 |
+| 只统计当前成员收件箱 | 同上，构造「本人发出」「发给第三人」两类噪声消息后断言不计入 |
+| 权限：他人拿不到自己的汇总、未映射 IP 被拒 | 同上，三身份分别请求；另断言 query 参数与伪造头都不能改变作用域，未映射 IP 403 |
+| 读到末尾标记、分段中间页不标记 | 同上，长正文逐页读取，断言中间页 `read/markedRead` 均为 false、末页均为 true |
+| 重复读取不重复计数 | 同上，二次读取 `markedRead` 为 false，随后显式 `mark_read` 返回 0 |
+| 纯附件消息可标记 | 同上，空正文单页即末尾，`markedRead` 为 true，汇总的 `attachments` 随之归零 |
+| 被拒读取不改已读 | 同上，第三方与发送人读取 403 后断言 `read_at` 仍为 NULL |
+| 标记后汇总即时反映、重启后未读状态持久 | 同上，含 `f.restart()` 前后比对 |
+| 显式 `mark_read` 行为不变 | `tests/server.test.js` 与 `tests/unread.test.js`，仍去重、幂等，对已自动标记的消息返回 0 |
+| 真实 SDK stdio 全链路 | `tests/e2e-mcp.test.js`：工具总数 9、`get_unread_summary` 无参数、`read_message` 描述已改口径；分页读取仅一页触发标记；汇总随之递减到 0 |
+| 汇总 SQL 走既有索引 | `EXPLAIN QUERY PLAN` 实跑确认 `SEARCH m USING INDEX idx_messages_to_unread (to_name=? AND read_at=?)` |
+| 响应结构与 PRD 5.1 一致 | 以中文成员名实跑中心并打印响应，字段与示例逐项对应 |
+| 插件纯逻辑 | `integrations/opencode/unread-core.test.mjs`，`node --test` **14 项通过**：多发件人格式化、无未读、超 10 个发件人截断、附件为 0 省略附件段、字段缺失与类型错误丢弃整个响应、轮询间隔下限与非法值回落、各类请求失败后降级并保留旧值 |
+
+### 与 PRD 的两处偏差（已确认保留）
+
+1. **汇总不是严格「单条 SQL 出全部结果」**。PRD 第 4.1 节 S3 要求单条聚合 SQL；实现是一条 `GROUP BY` 查询再由 JS 累加出 `total` 与 `attachments`。发件人数量是个位数，累加代价可忽略；若强行用窗口函数或二次扫描在一条语句内完成反而更重。索引使用符合 S3 本意，已由 `EXPLAIN QUERY PLAN` 证实。
+2. **`senders` 排序增加了次级键**。`created_at` 是毫秒精度字符串，同毫秒的两条消息顺序不确定，因此排序为 `latestTime DESC, MAX(id) DESC`。该 id **不出现在响应中**，仅用于打破平局，不违反「不返回消息 id」的约束。
+
+另需注意：`latestTime` 是该发件人**最新未读**消息的时间，不是其最新消息的时间。已读消息离开汇总后该值会回退到更早的未读消息，这与「侧栏展示待办」的语义一致。
+
+### 未读提醒未验证项
+
+- **真实 TUI 渲染未验证**：侧栏的实际显示效果、中文发件人名在 TUI 中的宽度与换行表现，均未在装有 OpenCode TUI 的环境中人工确认。
+- **OpenCode 实际加载插件未验证**：`tui.json` 声明后 OpenCode 是否成功加载 `.tsx` 插件、`sidebar_content` slot 注册是否被接受，未实机验证。插件自测只覆盖 `unread-core.mjs` 的纯逻辑，**不包含 slot 注册与渲染**。
+- **端到端联调待中心升级后进行**：当前运行中的中心仍是升级前版本，尚未重启，因此 `GET /api/unread-summary` 与自动已读**在生产中心上未生效**，「从另一身份发消息 → 侧栏出现 → 读完消失」的完整链路未走通。升级前应先 `admin backup`。
+- **PRD 第 8 章验收项 1、2、3、4、5、6、8 未执行**：均依赖实机 OpenCode 与已升级的中心。第 7 项（权限隔离）已由自动化测试覆盖。
+- **降级表现未实机确认**：中心不可达、slot 注册失败时「静默保留旧值、不影响 OpenCode 启动」只有单元测试与代码级的 try/catch 保证，未在真实 OpenCode 中制造故障验证。
+- **多成员并发轮询未测**：4 人各 30 秒轮询的实际中心负载没有实测数据，仅依据单条索引查询估算。
 
 ## 仍需部署环境验证
 

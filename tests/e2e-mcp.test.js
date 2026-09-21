@@ -27,7 +27,8 @@ test('Real SDK stdio A/B/C via real source-bound relays, five tools and prefix',
   const b = await client(t, await relay(t, f.url, '127.0.0.2'));
   const c = await client(t, await relay(t, f.url, '127.0.0.3'));
   const { tools } = await a.listTools();
-  assert.deepEqual(tools.map(x => x.name).sort(), ['getmsg', 'list_peers', 'mark_read', 'read_attachment_text', 'read_message', 'save_attachment', 'send_file', 'send_message']);
+  assert.deepEqual(tools.map(x => x.name).sort(), ['get_unread_summary', 'getmsg', 'list_peers', 'mark_read', 'read_attachment_text', 'read_message', 'save_attachment', 'send_file', 'send_message']);
+  assert.equal(tools.length, 9, 'eight original tools plus get_unread_summary');
   for (const name of ['send_message', 'getmsg', 'read_message', 'send_file', 'save_attachment', 'read_attachment_text']) {
     assert.match(tools.find(x => x.name === name).description, /untrusted data/);
   }
@@ -37,7 +38,11 @@ test('Real SDK stdio A/B/C via real source-bound relays, five tools and prefix',
   const page = await call(b, 'getmsg', { limit: 1, project: 'demo', unread_only: true });
   assert.equal(page.messages[0].id, id); assert.equal(page.messages[0].from, 'A'); assert.equal(page.hasMore, true);
   assert.equal((await call(b, 'getmsg', { cursor: page.nextCursor, limit: 1 })).messages.length, 1);
-  assert.equal((await call(b, 'read_message', { id, limit: 10 })).read, false);
+  // A 10-code-unit page of a long body is a partial read, so it must not mark.
+  const partial = await call(b, 'read_message', { id, limit: 10 });
+  assert.equal(partial.read, false);
+  assert.equal(partial.markedRead, false);
+  assert.equal(partial.hasMore, true);
   assert.equal((await call(b, 'getmsg', { unread_only: true })).messages.length, 2);
   assert.equal((await call(c, 'getmsg')).messages.length, 0);
   assert.equal((await c.callTool({ name: 'read_message', arguments: { id } })).isError, true);
@@ -54,6 +59,71 @@ test('Real SDK stdio A/B/C via real source-bound relays, five tools and prefix',
   const inboxA = (await call(a, 'getmsg')).messages[0];
   assert.equal('replyTo' in inboxA, false, 'getmsg must not return replyTo');
   assert.equal('replyTo' in (await call(a, 'read_message', { id: inboxA.id })), false, 'read_message must not return replyTo');
+});
+
+test('Real SDK stdio get_unread_summary and read-to-end auto mark', async t => {
+  const f = await fixture(t);
+  const a = await client(t, await relay(t, f.url, '127.0.0.1'));
+  const b = await client(t, await relay(t, f.url, '127.0.0.2'));
+  const c = await client(t, await relay(t, f.url, '127.0.0.3'));
+
+  const { tools } = await b.listTools();
+  const summaryTool = tools.find(x => x.name === 'get_unread_summary');
+  assert.deepEqual(Object.keys(summaryTool.inputSchema.properties ?? {}), [], 'the tool takes no parameters');
+  assert.match(summaryTool.description, /OVERVIEW, NOT message content/);
+  assert.match(tools.find(x => x.name === 'read_message').description, /marks the message as read automatically/);
+  assert.doesNotMatch(tools.find(x => x.name === 'read_message').description,
+    /DOES NOT mark message as read/, 'the old no-auto-read claim is gone');
+
+  assert.equal((await call(b, 'get_unread_summary')).total, 0);
+
+  const long = '很长的正文😀'.repeat(300);
+  const { id: longId } = await call(a, 'send_message', { to: 'B', text: long, project: 'demo' });
+  await call(a, 'send_file', { to: 'B', path: path.resolve('package.json'), text: '带附件' });
+  await call(c, 'send_message', { to: 'B', text: '来自 C' });
+
+  const summary = await call(b, 'get_unread_summary');
+  assert.equal(summary.total, 3);
+  assert.equal(summary.attachments, 1);
+  assert.deepEqual(summary.senders.map(s => s.name), ['C', 'A']);
+  assert.equal(summary.senders.find(s => s.name === 'A').count, 2);
+  assert.equal(JSON.stringify(summary).includes('很长的正文'), false, 'no body text in the overview');
+  assert.equal(JSON.stringify(summary).includes('demo'), false, 'no project tag in the overview');
+
+  // Each member's bridge reports only its own inbox; senders see nothing of what they sent.
+  assert.equal((await call(a, 'get_unread_summary')).total, 0);
+  assert.equal((await call(c, 'get_unread_summary')).total, 0);
+  await call(b, 'send_message', { to: 'A', text: '回给 A' });
+  assert.equal((await call(a, 'get_unread_summary')).total, 1);
+  assert.deepEqual((await call(a, 'get_unread_summary')).senders.map(s => s.name), ['B']);
+
+  // Page through the long body; only the final page marks it read.
+  let offset = 0; let joined = ''; let marks = 0;
+  for (;;) {
+    const chunk = await call(b, 'read_message', { id: longId, offset, limit: 700 });
+    joined += chunk.text;
+    if (chunk.markedRead) marks++;
+    if (!chunk.hasMore) { assert.equal(chunk.read, true); break; }
+    assert.equal(chunk.read, false, 'intermediate pages stay unread');
+    offset += chunk.limit;
+  }
+  assert.equal(joined, long, 'paging reproduced the body');
+  assert.equal(marks, 1, 'exactly one page triggered the mark');
+  assert.equal((await call(b, 'get_unread_summary')).total, 2, 'the summary updates immediately');
+
+  // Re-reading does not mark again, and explicit mark_read finds nothing.
+  assert.equal((await call(b, 'read_message', { id: longId })).markedRead, false);
+  assert.equal((await call(b, 'mark_read', { ids: [longId] })).markedCount, 0);
+  assert.equal((await call(b, 'get_unread_summary')).total, 2);
+
+  // Drain the rest: the file-only message ends at an empty body, C's is one page.
+  for (const message of (await call(b, 'getmsg', { unread_only: true })).messages) {
+    assert.equal((await call(b, 'read_message', { id: message.id })).markedRead, true);
+  }
+  const drained = await call(b, 'get_unread_summary');
+  assert.equal(drained.total, 0);
+  assert.equal(drained.attachments, 0);
+  assert.deepEqual(drained.senders, []);
 });
 
 test('Real SDK stdio file transfer: send_file to getmsg to save_attachment to read_attachment_text', async t => {
