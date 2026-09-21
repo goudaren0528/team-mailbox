@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { CONFIG } from '../src/config.js';
 import { initDb, syncMembers, insertMessage } from '../src/db.js';
 import { checkDatabase } from '../src/doctor.js';
+import { buildTraceableName } from '../src/mcp.js';
 import { fixture, request, temp, accessConfig, sha256, attachmentPayload } from './helpers.js';
 
 const MAX = CONFIG.maxAttachmentBytes;
@@ -281,4 +282,43 @@ test('VACUUM INTO backup of a DB holding attachments reopens with content intact
     assert.deepEqual(Buffer.from(row.data), data);
     assert.equal(sha256(Buffer.from(row.data)), digest, 'restored bytes still hash to the original digest');
   } finally { restored.close(); }
+});
+
+test('buildTraceableName: who-to-who plus timestamp, sanitized and length-bounded', () => {
+  const at = new Date(2026, 8, 21, 16, 15, 30);
+
+  // Extension is preserved so editors still recognise the file.
+  assert.equal(
+    buildTraceableName({ name: 'PRD.md', from: '张三', to: '李四' }, at),
+    'PRD__张三-to-李四__20260921-161530.md'
+  );
+
+  // Extensionless files keep working.
+  assert.equal(
+    buildTraceableName({ name: 'no-extension', from: 'alice', to: 'bob' }, at),
+    'no-extension__alice-to-bob__20260921-161530'
+  );
+
+  // Path separators and Windows-reserved characters cannot escape the directory.
+  const unsafe = buildTraceableName({ name: 'we:ird/na*me?.txt', from: 'alice', to: 'bob' }, at);
+  assert.equal(unsafe, 'we_ird_na_me___alice-to-bob__20260921-161530.txt');
+  assert.ok(!unsafe.includes('/') && !unsafe.includes('\\'));
+
+  // Over-long originals are trimmed, but the traceability suffix survives intact.
+  const long = buildTraceableName({ name: '中'.repeat(120) + '.md', from: '张三', to: '李四' }, at);
+  assert.ok(Buffer.byteLength(long, 'utf8') <= 255);
+  assert.ok(long.endsWith('__张三-to-李四__20260921-161530.md'));
+
+  // Missing metadata degrades to placeholders instead of throwing.
+  assert.equal(
+    buildTraceableName({ name: '', from: null, to: undefined }, at),
+    'attachment__unknown-to-unknown__20260921-161530'
+  );
+
+  // Two transfers of the same document differ by timestamp, so neither is lost.
+  const later = new Date(2026, 8, 21, 16, 15, 31);
+  assert.notEqual(
+    buildTraceableName({ name: 'PRD.md', from: 'a', to: 'b' }, at),
+    buildTraceableName({ name: 'PRD.md', from: 'a', to: 'b' }, later)
+  );
 });
