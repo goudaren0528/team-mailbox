@@ -2,7 +2,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { CONFIG } from './config.js';
-import { initDb, syncMembers, insertMessage, getMessageById, getAttachmentById, queryMessages, markMessagesRead } from './db.js';
+import { initDb, syncMembers, insertMessage, getMessageById, getAttachmentById, queryMessages, markMessagesRead, getUnreadSummary } from './db.js';
 import { loadAccessConfig } from './access.js';
 import { sendMessageSchema, getMsgQuerySchema, readMessageQuerySchema, markReadSchema, attachmentTextQuerySchema } from './validation.js';
 
@@ -216,6 +216,13 @@ export function createServer(options = {}) {
         return sendJson(res, 200, result);
       }
 
+      // GET /api/unread-summary — counts only, scoped to the caller's own inbox.
+      // Takes no parameters: a sidebar polls it, and anything selectable would be
+      // another way to ask about someone else's mail.
+      if (method === 'GET' && pathname === '/api/unread-summary') {
+        return sendJson(res, 200, getUnreadSummary(db, { to: req.member.name }));
+      }
+
       // GET /api/messages/:id (read message chunk)
       const messageIdMatch = pathname.match(/^\/api\/messages\/(\d+)$/);
       if (method === 'GET' && messageIdMatch) {
@@ -244,7 +251,23 @@ export function createServer(options = {}) {
         const textChunk = msg.text.slice(offset, offset + limit);
         const hasMore = offset + limit < totalLength;
 
-        // Does NOT mark as read automatically
+        // Reaching the end of the body marks the message read. Intermediate pages of a
+        // paged read must not, or skimming the first screen would silently clear it.
+        // A file-only message has an empty text, so its single page is already the end.
+        let markedRead = false;
+        const alreadyRead = msg.readAt !== null;
+        if (!hasMore && !alreadyRead) {
+          try {
+            // Reuses the recipient-scoped, already-unread guarded update, so a concurrent
+            // mark_read cannot be double counted.
+            markedRead = markMessagesRead(db, { to: req.member.name, ids: [msg.id] }).markedCount === 1;
+          } catch {
+            // Read is the primary operation: a failed bookkeeping write must not turn a
+            // successful body fetch into an error. The message simply stays unread.
+            markedRead = false;
+          }
+        }
+
         return sendJson(res, 200, {
           id: msg.id,
           from: msg.from,
@@ -252,7 +275,10 @@ export function createServer(options = {}) {
           title: msg.title,
           project: msg.project,
           time: msg.time,
-          read: msg.readAt !== null,
+          // Reflects the state after this call, so a caller that just finished the body
+          // does not have to re-query to learn the message is now read.
+          read: alreadyRead || markedRead,
+          markedRead,
           totalLength,
           offset,
           limit,
