@@ -308,6 +308,8 @@ export function createServer(options = {}) {
           mime: row.mime,
           sha256: row.sha256,
           createdAt: row.createdAt,
+          from: row.from,
+          to: row.to,
           data_base64: Buffer.from(row.data).toString('base64'),
         });
       }
