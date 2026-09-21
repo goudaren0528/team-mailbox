@@ -107,7 +107,7 @@ npm run doctor
 
 对 Agent 说：“给 B 发一句：接口已更新，方便时看看。”或“列未读消息的 id 和摘要，让我选择。”
 
-八工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read`、`send_file`、`save_attachment`、`read_attachment_text`。中心入库即送达，接收方可离线；没有主动推送。按稳定 id 选择、分页列摘要、分段读正文；列表/读取均不自动已读。回复和 `project` 标签可选，见[工具文档](docs/tools.md)。
+八工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read`、`send_file`、`save_attachment`、`read_attachment_text`。中心入库即送达，接收方可离线；没有主动推送。按稳定 id 选择、分页列摘要、分段读正文；列表/读取均不自动已读。没有回复关联，归类只用可选的 `project` 标签，见[工具文档](docs/tools.md)。
 
 ### 发文件
 
@@ -144,6 +144,6 @@ npm run doctor
 | --- | --- |
 | [管理员手册](docs/admin.md) | JSON 映射、LAN 开放、旧 DB 迁移、备份恢复、升级、Docker 限制 |
 | [同事接入](docs/client.md) | 通用 stdio 契约、仅地址配置、安全接入指令 |
-| [工具说明](docs/tools.md) | 八工具、稳定 id、分页分段、回复、显式已读、附件收发 |
+| [工具说明](docs/tools.md) | 八工具、稳定 id、分页分段、项目标签、显式已读、附件收发 |
 | [排障](docs/troubleshooting.md) | doctor、403、配置失败和网络来源问题 |
 | [验证记录](docs/verification.md) | 新方案真实 socket/SDK/回归证据及限制 |

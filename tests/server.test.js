@@ -28,7 +28,7 @@ test('Real IPv6 and dual-stack mapped socket identity', async t => {
   assert.equal((await request(`http://127.0.0.1:${port}/health`, '127.0.0.2')).data.member.name, 'B');
 });
 
-test('A/B/C messages: isolation, reply, explicit read, pagination, filtering, limits, durable restart and removal', async t => {
+test('A/B/C messages: isolation, explicit read, pagination, filtering, limits, durable restart and removal', async t => {
   const f = await fixture(t);
   const call = (ip, endpoint, body) => request(f.url + endpoint, ip, body ? 'POST' : 'GET', body);
   const send = (ip, body) => call(ip, '/api/messages', body);
@@ -57,10 +57,10 @@ test('A/B/C messages: isolation, reply, explicit read, pagination, filtering, li
   } while (true);
   assert.equal(joined, text);
   assert.equal((await call('127.0.0.2', '/api/messages?unread_only=true')).data.messages.length, 2);
-  assert.equal((await send('127.0.0.3', { to: 'A', text: 'bad', reply_to: id })).status, 403);
-  assert.equal((await send('127.0.0.2', { to: 'C', text: 'bad', reply_to: id })).status, 400);
-  assert.equal((await send('127.0.0.2', { to: 'A', text: 'reply', reply_to: id })).status, 201);
-  assert.equal((await send('127.0.0.2', { to: 'A', text: 'bad', reply_to: 999999 })).status, 400);
+  // reply_to was removed; an unknown field is rejected only by the attachment
+  // sub-schema, so at top level it is simply ignored and never stored.
+  assert.equal((await send('127.0.0.2', { to: 'A', text: 'plain', reply_to: id })).status, 201);
+  assert.equal(f.app.db.prepare('SELECT COUNT(*) as n FROM messages WHERE reply_to IS NOT NULL').get().n, 0);
   assert.equal((await call('127.0.0.2', '/api/messages/mark-read', { ids: [id, id] })).data.markedCount, 1);
   assert.equal((await call('127.0.0.2', '/api/messages/mark-read', { ids: [id] })).data.markedCount, 0);
   for (const body of [{ to: 'B', text: '' }, { to: 'B', text: 'x'.repeat(32001) }, { to: 'B', text: 'ok', title: 'x'.repeat(101) }]) {

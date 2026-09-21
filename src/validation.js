@@ -81,12 +81,6 @@ export const sendMessageSchema = z.object({
     .max(CONFIG.maxProjectChars, `Project cannot exceed ${CONFIG.maxProjectChars} characters`)
     .optional()
     .nullable(),
-  reply_to: z
-    .number()
-    .int('reply_to must be an integer')
-    .positive('reply_to must be a positive message ID')
-    .optional()
-    .nullable(),
 }).refine((value) => (value.text != null && value.text !== '') || value.attachment != null,
   { message: 'Message text is required when no attachment is provided', path: ['text'] });
 

@@ -100,13 +100,15 @@ export function syncMembers(db, members) {
   }
 }
 
-export function insertMessage(db, { from, to, title, text, project, replyTo, deviceName, attachment }) {
+export function insertMessage(db, { from, to, title, text, project, deviceName, attachment }) {
   const now = new Date().toISOString();
+  // reply_to is a retired feature: the column stays for historical rows, but every
+  // new message writes NULL. Dropping it would require rebuilding messages.
   const insert = () => db.prepare(`
     INSERT INTO messages (from_name, to_name, title, text, project, reply_to, created_at, device_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
     RETURNING id, created_at as createdAt
-  `).get(from, to, title ?? null, text, project ?? null, replyTo ?? null, now, deviceName ?? null);
+  `).get(from, to, title ?? null, text, project ?? null, now, deviceName ?? null);
 
   if (!attachment) return insert();
 
@@ -148,7 +150,7 @@ function attachmentFromRow(row) {
 export function getMessageById(db, id) {
   const row = db.prepare(`
     SELECT m.id, m.from_name as "from", m.to_name as "to", m.title, m.text, m.project,
-           m.reply_to as replyTo, m.created_at as time, m.read_at as readAt,
+           m.created_at as time, m.read_at as readAt,
            ${ATTACHMENT_META_SELECT}
     FROM messages m
     LEFT JOIN attachments a ON a.message_id = m.id
@@ -162,7 +164,6 @@ export function getMessageById(db, id) {
     title: row.title,
     text: row.text,
     project: row.project,
-    replyTo: row.replyTo,
     time: row.time,
     readAt: row.readAt,
     attachment: attachmentFromRow(row),
@@ -188,7 +189,7 @@ export function queryMessages(db, { to, from, unreadOnly, project, cursor, limit
   const cursorVal = typeof cursor === 'number' ? cursor : null;
 
   const rows = db.prepare(`
-    SELECT m.id, m.from_name as "from", m.to_name as "to", m.title, m.project, m.reply_to as replyTo,
+    SELECT m.id, m.from_name as "from", m.to_name as "to", m.title, m.project,
            m.created_at as time, m.read_at as readAt,
            SUBSTR(m.text, 1, 80) as summary,
            LENGTH(m.text) as totalLength,
@@ -229,7 +230,6 @@ export function queryMessages(db, { to, from, unreadOnly, project, cursor, limit
       // File-only messages store an empty text; show the file name instead of a blank row.
       summary: summary === '' && attachment ? `[文件] ${attachment.name}` : summary,
       project: row.project,
-      replyTo: row.replyTo,
       attachment,
     };
   });

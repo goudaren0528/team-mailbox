@@ -13,7 +13,7 @@
 | CIDR/IP 正规化、mapped IPv6、边界与 fail-closed | `tests/access.test.js`，配置错误时断言 DB 父目录未创建 |
 | 真实来源、所有路由拒绝未知/超范围、伪造头不换身份 | `tests/server.test.js`，http.request localAddress 绑定 127.0.0.1/.2/.3/.4 与 127.0.1.1 |
 | IPv6 / IPv4-mapped socket | dual-stack `::` 监听，通过 ::1 和 IPv4 实际 socket 请求 |
-| A/B/C 隔离、回复、已读、分页分段、过滤、重启与配置删除 | `tests/server.test.js`，实际文件 DB 和真实 HTTP |
+| A/B/C 隔离、已读、分页分段、过滤、重启与配置删除 | `tests/server.test.js`，实际文件 DB 和真实 HTTP |
 | SDK stdio 与原有五个文本工具 | `tests/e2e-mcp.test.js`，官方 Client/StdioClientTransport 启动真实 bridge；仅测试中通过 localAddress relay 区分来源 |
 | 禁止跳转与 10 秒超时 | 真 SDK 调用受控本地 HTTP 服务 |
 | doctor 远端默认、严格健康 schema、身份与前缀、只读 DB | `tests/doctor.test.js`，真实 HTTP/本地 DB，不以旧 mock PASS 代替 |

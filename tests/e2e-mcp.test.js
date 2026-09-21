@@ -41,11 +41,19 @@ test('Real SDK stdio A/B/C via real source-bound relays, five tools and prefix',
   assert.equal((await call(b, 'getmsg', { unread_only: true })).messages.length, 2);
   assert.equal((await call(c, 'getmsg')).messages.length, 0);
   assert.equal((await c.callTool({ name: 'read_message', arguments: { id } })).isError, true);
-  assert.equal((await c.callTool({ name: 'send_message', arguments: { to: 'A', text: 'bad', reply_to: id } })).isError, true);
   assert.equal((await call(c, 'mark_read', { ids: [id] })).markedCount, 0);
   assert.equal((await call(b, 'mark_read', { ids: [id] })).markedCount, 1);
-  await call(b, 'send_message', { to: 'A', text: '回复', reply_to: id, project: 'demo' });
-  assert.equal((await call(a, 'getmsg')).messages[0].replyTo, id);
+
+  // reply_to is gone from both send tools' published schemas and from every response.
+  for (const name of ['send_message', 'send_file']) {
+    const schema = tools.find(x => x.name === name).inputSchema;
+    assert.equal('reply_to' in (schema.properties ?? {}), false, `${name} must not publish reply_to`);
+    assert.equal(JSON.stringify(schema).includes('reply_to'), false, `${name} schema mentions reply_to`);
+  }
+  await call(b, 'send_message', { to: 'A', text: '后续说明', project: 'demo' });
+  const inboxA = (await call(a, 'getmsg')).messages[0];
+  assert.equal('replyTo' in inboxA, false, 'getmsg must not return replyTo');
+  assert.equal('replyTo' in (await call(a, 'read_message', { id: inboxA.id })), false, 'read_message must not return replyTo');
 });
 
 test('Real SDK stdio file transfer: send_file to getmsg to save_attachment to read_attachment_text', async t => {

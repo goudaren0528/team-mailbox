@@ -22,7 +22,7 @@ test('Admin validates/lists current config without DB, rejects removed commands;
     const db = initDb(dbPath);
     try {
       syncMembers(db, accessConfig.members);
-      insertMessage(db, { from: 'A', to: 'B', text: 'persisted', title: null, project: null, replyTo: null, deviceName: null });
+      insertMessage(db, { from: 'A', to: 'B', text: 'persisted', title: null, project: null, deviceName: null });
       const backup = path.join(dir, 'backup.sqlite');
       assert.equal(runAdmin(['node', 'admin', 'backup', backup]), 0);
       assert.equal(checkDatabase(backup), 1);
