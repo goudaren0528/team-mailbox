@@ -100,7 +100,7 @@ It should print the member name the hub resolved for your machine. If the name i
 | Tool | Purpose |
 |---|---|
 | `list_peers` | List configured members you can send to |
-| `send_message` | Send free-form text, with optional title, project tag, and reply reference |
+| `send_message` | Send free-form text, with optional title and project tag |
 | `getmsg` | List your inbox: stable IDs, sender, time, summary — never marks read |
 | `read_message` | Read one message body, paginated |
 | `mark_read` | Explicitly mark messages read |
@@ -136,7 +136,7 @@ Because UTF-8 multi-byte characters consume the 64 KiB body budget faster, CJK t
 |---|---|
 | [docs/admin.md](docs/admin.md) | Hub deployment, IP mapping, backup and restore, attachment storage |
 | [docs/client.md](docs/client.md) | Generic stdio contract, attachment save rules, diagnostics |
-| [docs/tools.md](docs/tools.md) | All eight tools, pagination, reply semantics, read state |
+| [docs/tools.md](docs/tools.md) | All eight tools, pagination, project tags, read state |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | doctor, 403s, size errors, source-address problems |
 
 ## Testing

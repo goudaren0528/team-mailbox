@@ -28,7 +28,6 @@
 | `text` | 必填，1–32000 个 JS 字符串码元；原样保存，不 trim，无内容模板 |
 | `title` | 可选，最多 100；中心 trim |
 | `project` | 可选，最多 50；中心 trim；自由标签，无需预建项目 |
-| `reply_to` | 可选，正整数消息 id；必须是本人参与的原消息，且 `to` 必须是原会话对方 |
 
 成功返回 `{id, createdAt}`，表示中心已入库，不代表对方在线、已读或已执行。发送者身份来自真实 socket 来源 IP 与管理员映射，不能通过设备名、HTTP 头或参数指定。没有幂等键或自动重试保障；超时后消息可能已经保存，直接重发可能重复。
 
@@ -47,8 +46,8 @@
 ```json
 {
   "messages": [
-    {"id": 41, "from": "alice", "title": "接口更新", "time": "2026-09-20T08:00:00.000Z", "read": false, "summary": "接口已更新，方便时看看。", "project": "demo", "replyTo": null, "attachment": null},
-    {"id": 42, "from": "alice", "title": null, "time": "2026-09-21T02:00:00.000Z", "read": false, "summary": "[文件] 排查记录.md", "project": null, "replyTo": null,
+    {"id": 41, "from": "alice", "title": "接口更新", "time": "2026-09-20T08:00:00.000Z", "read": false, "summary": "接口已更新，方便时看看。", "project": "demo", "attachment": null},
+    {"id": 42, "from": "alice", "title": null, "time": "2026-09-21T02:00:00.000Z", "read": false, "summary": "[文件] 排查记录.md", "project": null,
      "attachment": {"id": 7, "name": "排查记录.md", "size": 20480, "mime": null, "sha256": "..."}}
   ],
   "nextCursor": null,
@@ -64,7 +63,7 @@
 
 ### 多消息稳定选择
 
-先向用户列出 `id + from + time + title/summary + project`。用户说“第二条”时，应将其映射到**刚才展示那一页中的实际 id**；若上下文不明确先询问。后续读取、标已读和回复都使用 id，不重新查询后按第二个位置操作。id 在同一份数据库历史中稳定，不是收件箱连续序号；恢复旧备份后不要继续使用旧会话缓存的选择。
+先向用户列出 `id + from + time + title/summary + project`。用户说“第二条”时，应将其映射到**刚才展示那一页中的实际 id**；若上下文不明确先询问。后续读取和标已读都使用 id，不重新查询后按第二个位置操作。id 在同一份数据库历史中稳定，不是收件箱连续序号；恢复旧备份后不要继续使用旧会话缓存的选择。
 
 ### 列表分页
 
@@ -78,7 +77,7 @@
 
 `id` 为实际消息正整数 id；`offset` 默认 0、非负；`limit` 默认 2000，范围 1–4000。仅收件人能读取正文，发送者不能把此工具当发件箱读取（发给自己的消息除外）。
 
-返回 `id/from/to/title/project/replyTo/time/read/totalLength/offset/limit/hasMore/text/attachment`。当 `hasMore=true`，下次使用**同一个 id**和 `offset + limit`，直到 false。超出正文末尾的 offset 会返回空 text，不是自动从头读取。
+返回 `id/from/to/title/project/time/read/totalLength/offset/limit/hasMore/text/attachment`。当 `hasMore=true`，下次使用**同一个 id**和 `offset + limit`，直到 false。超出正文末尾的 offset 会返回空 text，不是自动从头读取。
 
 `attachment` 与 `getmsg` 中含义相同：无附件为 `null`，有附件为 `{id, name, size, mime, sha256}`，**只有元数据，不含文件内容**。纯文件消息的 `text` 是空字符串、`totalLength` 为 0，要取内容须用 `read_attachment_text`（文本类）或 `save_attachment`（任意类型）。
 
@@ -109,7 +108,6 @@
 | `title` | 可选，最多 100 |
 | `text` | 可选随附正文，最多 32000 码元；省略即纯文件消息 |
 | `project` | 可选，最多 50 |
-| `reply_to` | 可选，规则同 `send_message` |
 
 bridge 读取文件、计算 SHA-256、base64 后上传；文件名取 `path` 的 basename，中心会剥离路径分隔符和控制字符。**中心会重新计算 SHA-256 比对**，不匹配拒绝入库。
 
@@ -153,14 +151,16 @@ bridge 读取文件、计算 SHA-256、base64 后上传；文件名取 `path` �
 
 权限同 `save_attachment`：仅收件人，发送人本人也是 403。预览不标已读，也不改变消息已读状态。
 
-## 回复和项目标签
+## 项目标签
 
-例如 bob 收到 alice 的消息 id 41，回复可为：
+**没有回复关联功能。** 工具不接受 `reply_to`，返回里也没有 `replyTo`；针对某条消息的答复就是普通的一条新消息，需要时在正文里自行说明指向哪条 id。
+
+想把往来消息归到一起，只能用 `project`：
 
 ```json
-{"to":"alice","text":"看到了，下午反馈。","reply_to":41,"project":"demo"}
+{"to":"alice","text":"看到了，下午反馈。","project":"demo"}
 ```
 
-`reply_to` 输入是 snake_case，响应元数据是 `replyTo`。中心要求回复原会话对方，不能引用 alice↔bob 的消息发送给第三人；本人既可引用收到的，也可引用自己发出的原消息。不会自动填充收件人、标题或项目；要保留标签需显式传 `project`。未提供的可选字段应省略，MCP 工具 schema 不接受 null。
+`project` 是自由标签，最多 50 字符，无需预建，`getmsg` 按它精确过滤。它只用于整理和筛选，不形成权限域、群聊或线程视图。不会自动填充收件人、标题或项目；要保留标签需每条显式传 `project`。未提供的可选字段应省略，MCP 工具 schema 不接受 null。
 
-`project` 只用于整理和精确过滤，不形成权限域、群聊或线程视图。没有按 replyTo 拉取线程、主动推送或群发工具；需要看新消息时由用户/宿主主动调用 `getmsg`。附件随消息走，同样没有推送：对方要拿到文件，必须自己调用 `getmsg` 发现附件后再保存。
+没有线程视图、主动推送或群发工具；需要看新消息时由用户/宿主主动调用 `getmsg`。附件随消息走，同样没有推送：对方要拿到文件，必须自己调用 `getmsg` 发现附件后再保存。
