@@ -1,21 +1,19 @@
-# 管理员：部署、映射、迁移与恢复
+﻿# 绠＄悊鍛橈細閮ㄧ讲銆佹槧灏勩€佽縼绉讳笌鎭㈠
 
-## 单中心、直接 Node 优先
+## 鍗曚腑蹇冦€佺洿鎺?Node 浼樺厛
 
-团队只运行一份中心，所有消息保存在其 SQLite。Node.js **24**、ESM JavaScript、内置 node:sqlite 和官方 MCP SDK；源码根目录 `npm ci`，启动 `npm start`。成员只需要源码依赖与 bridge，不需要本地 DB。
-
-| 环境变量 | 默认 |
+鍥㈤槦鍙繍琛屼竴浠戒腑蹇冿紝鎵€鏈夋秷鎭繚瀛樺湪鍏?SQLite銆侼ode.js **24**銆丒SM JavaScript銆佸唴缃?node:sqlite 鍜屽畼鏂?MCP SDK锛涙簮鐮佹牴鐩綍 `npm ci`锛屽惎鍔?`npm start`銆傛垚鍛樺彧闇€瑕佹簮鐮佷緷璧栦笌 bridge锛屼笉闇€瑕佹湰鍦?DB銆?
+| 鐜鍙橀噺 | 榛樿 |
 | --- | --- |
 | `MSG_HOST` | `127.0.0.1` |
 | `MSG_PORT` | `8787` |
-| `MSG_DB_PATH` | 当前工作目录下 `data/msg.sqlite` |
-| `MSG_ACCESS_CONFIG` | 当前工作目录下 `access.json` |
+| `MSG_DB_PATH` | 褰撳墠宸ヤ綔鐩綍涓?`data/msg.sqlite` |
+| `MSG_ACCESS_CONFIG` | 褰撳墠宸ヤ綔鐩綍涓?`access.json` |
 
-推荐 DB 和配置均使用绝对路径。`.env` 不自动加载；PowerShell `$env:变量 = '值'` 只影响当前终端及后续子进程。原生中心前台 Ctrl+C 停止，长期托管由管理员采用现有进程管理方式，本项目不提供专用安装器。
+鎺ㄨ崘 DB 鍜岄厤缃潎浣跨敤缁濆璺緞銆俙.env` 涓嶈嚜鍔ㄥ姞杞斤紱PowerShell `$env:鍙橀噺 = '鍊?` 鍙奖鍝嶅綋鍓嶇粓绔強鍚庣画瀛愯繘绋嬨€傚師鐢熶腑蹇冨墠鍙?Ctrl+C 鍋滄锛岄暱鏈熸墭绠＄敱绠＄悊鍛橀噰鐢ㄧ幇鏈夎繘绋嬬鐞嗘柟寮忥紝鏈」鐩笉鎻愪緵涓撶敤瀹夎鍣ㄣ€?
+## JSON 鏄犲皠
 
-## JSON 映射
-
-`access.example.json` 只提供 loopback 单人成员 A 演示。团队示意（IP 仅为文档示例）：
+`access.example.json` 鍙彁渚?loopback 鍗曚汉鎴愬憳 A 婕旂ず銆傚洟闃熺ず鎰忥紙IP 浠呬负鏂囨。绀轰緥锛夛細
 
 ```json
 {
@@ -28,96 +26,60 @@
 }
 ```
 
-一个成员可对应多 IP；所有这些 IP 共享同一收件箱和已读。成员名经 trim 后允许 Unicode 字母/数字、下划线、连字符，1–32 个 UTF-16 码元。没有 displayName 配置字段，API 为兼容五工具结果返回 displayName=name。
-
-校验采用成熟 `ipaddr.js` 解析和 CIDR 匹配，使用 Node `net.isIP` 拒绝缩写/八进制 IPv4。IPv4-mapped IPv6 规范化到 IPv4，因此 `127.0.0.1` 与 `::ffff:127.0.0.1` 不能重复绑定；同一成员内重复也失败。无 zone 的标准 IPv6 可用；mapped CIDR 必须至少 /96，再换算为 IPv4 前缀。配置字段严格校验，不接受任意额外身份字段。
-
-缺文件、坏 JSON、空 allowedCidrs/members、非法 CIDR/IP、重复 name、重复规范 IP、空 ips 或任何成员 IP 超出白名单，均**在打开 DB 前启动失败**。没有默认放行或凭据回退。
-
+涓€涓垚鍛樺彲瀵瑰簲澶?IP锛涙墍鏈夎繖浜?IP 鍏变韩鍚屼竴鏀朵欢绠卞拰宸茶銆傛垚鍛樺悕缁?trim 鍚庡厑璁?Unicode 瀛楁瘝/鏁板瓧銆佷笅鍒掔嚎銆佽繛瀛楃锛?鈥?2 涓?UTF-16 鐮佸厓銆傛病鏈?displayName 閰嶇疆瀛楁锛孉PI 涓哄吋瀹逛簲宸ュ叿缁撴灉杩斿洖 displayName=name銆?
+鏍￠獙閲囩敤鎴愮啛 `ipaddr.js` 瑙ｆ瀽鍜?CIDR 鍖归厤锛屼娇鐢?Node `net.isIP` 鎷掔粷缂╁啓/鍏繘鍒?IPv4銆侷Pv4-mapped IPv6 瑙勮寖鍖栧埌 IPv4锛屽洜姝?`127.0.0.1` 涓?`::ffff:127.0.0.1` 涓嶈兘閲嶅缁戝畾锛涘悓涓€鎴愬憳鍐呴噸澶嶄篃澶辫触銆傛棤 zone 鐨勬爣鍑?IPv6 鍙敤锛沵apped CIDR 蹇呴』鑷冲皯 /96锛屽啀鎹㈢畻涓?IPv4 鍓嶇紑銆傞厤缃瓧娈典弗鏍兼牎楠岋紝涓嶆帴鍙椾换鎰忛澶栬韩浠藉瓧娈点€?
+缂烘枃浠躲€佸潖 JSON銆佺┖ allowedCidrs/members銆侀潪娉?CIDR/IP銆侀噸澶?name銆侀噸澶嶈鑼?IP銆佺┖ ips 鎴栦换浣曟垚鍛?IP 瓒呭嚭鐧藉悕鍗曪紝鍧?*鍦ㄦ墦寮€ DB 鍓嶅惎鍔ㄥけ璐?*銆傛病鏈夐粯璁ゆ斁琛屾垨鍑嵁鍥為€€銆?
 ```powershell
-Set-Location -LiteralPath 'D:\msg-mcp'
-$env:MSG_ACCESS_CONFIG = 'D:\msg-mcp\access.json'
+Set-Location -LiteralPath 'D:\team-mailbox'
+$env:MSG_ACCESS_CONFIG = 'D:\team-mailbox\access.json'
 npm run admin -- validate-config
 npm run admin -- list-members
 ```
 
-这两个命令只读配置，不创建 DB；list-members 列出当前文件的规范 IP。中心加载的是启动快照：修改后先校验，再重启中心。停止前在途请求可能仍完成，撤销操作应考虑停服边界。
+杩欎袱涓懡浠ゅ彧璇婚厤缃紝涓嶅垱寤?DB锛沴ist-members 鍒楀嚭褰撳墠鏂囦欢鐨勮鑼?IP銆備腑蹇冨姞杞界殑鏄惎鍔ㄥ揩鐓э細淇敼鍚庡厛鏍￠獙锛屽啀閲嶅惎涓績銆傚仠姝㈠墠鍦ㄩ€旇姹傚彲鑳戒粛瀹屾垚锛屾挙閿€鎿嶄綔搴旇€冭檻鍋滄湇杈圭晫銆?
+### 娣诲姞銆佷慨鏀广€佸垹闄ゆ垚鍛?
+- **娣诲姞**锛氱粰 JSON members 澧炲姞鍞竴 name/ips锛岀‘淇?IP 鍦ㄧ櫧鍚嶅崟鍐咃紱鏍￠獙銆侀噸鍚€?- **鎹?IP/澧炲姞璁惧**锛氫慨鏀瑰悓涓€鎴愬憳 ips锛涙牎楠屻€侀噸鍚紝鏃?IP 鑻ュ垹闄ゅ垯涓嶈兘鍐嶈闂€?- **鎾ら攢**锛氬垹闄ゆ暣涓垚鍛橀」鎴栧叾 IP锛堜笉鑳界暀涓嬬┖ ips锛夛紱鏍￠獙銆侀噸鍚€傝鎴愬憳涓嶅啀鏈夋柊鏀朵欢璧勬牸锛屽巻鍙叉暟鎹繚鐣欍€?- **閲嶆柊鍔犲叆/鏀瑰悕**锛氬悓鍚嶄細閲嶆柊鑾峰緱鍘熸敹浠剁锛涙敼鍚嶆槸鏂拌韩浠斤紝涓嶈縼绉诲巻鍙层€備笉瑕佹妸鏃?name 澶嶇敤缁欏彟涓€涓汉銆?
+浣跨敤鍥哄畾 IP 鎴?DHCP 淇濈暀锛屽苟绠＄悊 IPv6 鍦板潃绋冲畾鎬э紱IP 琚缁欏彟涓€鍙拌澶囧彲鑳藉鑷磋璁ゃ€侷P 鏄綉缁滆闂害瀹氾紝**涓嶆槸寮鸿韩浠借璇?*銆傚悓涓€ NAT/浠ｇ悊/鍏变韩鐢佃剳 IP 涔嬪悗鐨勭敤鎴锋棤娉曞尯鍒嗐€?
+## 鏄惧紡寮€鏀?LAN锛堢敱绠＄悊鍛樻搷浣滐紝鏈疆鏈墽琛岋級
 
-### 添加、修改、删除成员
-
-- **添加**：给 JSON members 增加唯一 name/ips，确保 IP 在白名单内；校验、重启。
-- **换 IP/增加设备**：修改同一成员 ips；校验、重启，旧 IP 若删除则不能再访问。
-- **撤销**：删除整个成员项或其 IP（不能留下空 ips）；校验、重启。该成员不再有新收件资格，历史数据保留。
-- **重新加入/改名**：同名会重新获得原收件箱；改名是新身份，不迁移历史。不要把旧 name 复用给另一个人。
-
-使用固定 IP 或 DHCP 保留，并管理 IPv6 地址稳定性；IP 被租给另一台设备可能导致误认。IP 是网络访问约定，**不是强身份认证**。同一 NAT/代理/共享电脑 IP 之后的用户无法区分。
-
-## 显式开放 LAN（由管理员操作，本轮未执行）
-
-1. 确定真实成员来源地址、白名单、服务网卡以及限定来源的防火墙规则，禁止公网入口。
-2. 编辑并校验 access.json；保留管理员来源以便从其机器运行 health/doctor。CIDR 通过仍需有成员映射，health 也不例外。
-3. 停止中心，在启动终端设置实际网卡地址，例如 `$env:MSG_HOST = '192.168.50.10'`。若选 `0.0.0.0` 会监听全部 IPv4 网卡，只应在防火墙范围确认后选择。
-4. 使用同一 DB 绝对路径重启。向同事提供实际服务 URL，不是 `0.0.0.0`。
-5. **每台成员机器**运行 doctor，确认服务识别的 member 正确后才进行双方同意的测试收发。
-
-服务只用 `req.socket.remoteAddress`，不采信 Forwarded/X-Forwarded-For/Authorization/自报名字；即使在代理后也不会改变此规则。HTTP 明文仅可信 LAN；若需要 TLS，应采用经验证保留来源的传输部署，普通 TLS 反向代理会让中心看到代理 IP，不能简单放行代理并假定身份已区分。本次没有修改网络、防火墙或客户端配置。
-
-## 旧数据库迁移与升级
-
-旧版采用个人凭据表。升级后源码没有旧认证/成员创建轮换撤销 CLI，没有凭据环境变量或认证 fallback。
-
-1. **升级前先备份**现有 DB 和部署参数，创建并校验新 access.json。为需要保留收件箱的成员使用原 name；新配置是唯一授权来源，旧数据库的 revoked_at 不再决定访问权限。
-2. 停止旧服务、替换源码和 lockfile、Node 24 下 `npm ci`，设置同一 DB 路径及新 access.json。
-3. 新中心启动时先验证配置，再开启 DB；schema 初始化/迁移在事务中执行，**删除旧 tokens 表及其索引**，保留 members 历史行与 messages。消息 id、文本、项目、reply_to、read_at、创建时间和自增序列不重写。新配置缺少的旧成员仍保留用于外键，但不能访问或成为新收件人。
-4. 将新配置成员 INSERT OR IGNORE 到历史 members 表；当前 peers 从配置返回。旧 display_name/revoked_at 只作历史兼容列，不当授权。
-5. 核对 doctor、当前成员、历史消息以及受控收发。未来未知 schema 升级不能据此保证自动兼容；当前只明确支持仓库旧版到本 IP 方案的迁移。
-
-迁移不丢消息，但不能直接用旧程序回滚到已删除凭据表的新 DB。要回滚旧版本，须停服后恢复**升级前备份及旧代码**，会失去备份后的新消息；先确认业务接受该回退边界。不要让旧、新中心同时打开同一 DB。
-
-## 备份：VACUUM INTO
+1. 纭畾鐪熷疄鎴愬憳鏉ユ簮鍦板潃銆佺櫧鍚嶅崟銆佹湇鍔＄綉鍗′互鍙婇檺瀹氭潵婧愮殑闃茬伀澧欒鍒欙紝绂佹鍏綉鍏ュ彛銆?2. 缂栬緫骞舵牎楠?access.json锛涗繚鐣欑鐞嗗憳鏉ユ簮浠ヤ究浠庡叾鏈哄櫒杩愯 health/doctor銆侰IDR 閫氳繃浠嶉渶鏈夋垚鍛樻槧灏勶紝health 涔熶笉渚嬪銆?3. 鍋滄涓績锛屽湪鍚姩缁堢璁剧疆瀹為檯缃戝崱鍦板潃锛屼緥濡?`$env:MSG_HOST = '192.168.50.10'`銆傝嫢閫?`0.0.0.0` 浼氱洃鍚叏閮?IPv4 缃戝崱锛屽彧搴斿湪闃茬伀澧欒寖鍥寸‘璁ゅ悗閫夋嫨銆?4. 浣跨敤鍚屼竴 DB 缁濆璺緞閲嶅惎銆傚悜鍚屼簨鎻愪緵瀹為檯鏈嶅姟 URL锛屼笉鏄?`0.0.0.0`銆?5. **姣忓彴鎴愬憳鏈哄櫒**杩愯 doctor锛岀‘璁ゆ湇鍔¤瘑鍒殑 member 姝ｇ‘鍚庢墠杩涜鍙屾柟鍚屾剰鐨勬祴璇曟敹鍙戙€?
+鏈嶅姟鍙敤 `req.socket.remoteAddress`锛屼笉閲囦俊 Forwarded/X-Forwarded-For/Authorization/鑷姤鍚嶅瓧锛涘嵆浣垮湪浠ｇ悊鍚庝篃涓嶄細鏀瑰彉姝よ鍒欍€侶TTP 鏄庢枃浠呭彲淇?LAN锛涜嫢闇€瑕?TLS锛屽簲閲囩敤缁忛獙璇佷繚鐣欐潵婧愮殑浼犺緭閮ㄧ讲锛屾櫘閫?TLS 鍙嶅悜浠ｇ悊浼氳涓績鐪嬪埌浠ｇ悊 IP锛屼笉鑳界畝鍗曟斁琛屼唬鐞嗗苟鍋囧畾韬唤宸插尯鍒嗐€傛湰娆℃病鏈変慨鏀圭綉缁溿€侀槻鐏鎴栧鎴风閰嶇疆銆?
+## 鏃ф暟鎹簱杩佺Щ涓庡崌绾?
+鏃х増閲囩敤涓汉鍑嵁琛ㄣ€傚崌绾у悗婧愮爜娌℃湁鏃ц璇?鎴愬憳鍒涘缓杞崲鎾ら攢 CLI锛屾病鏈夊嚟鎹幆澧冨彉閲忔垨璁よ瘉 fallback銆?
+1. **鍗囩骇鍓嶅厛澶囦唤**鐜版湁 DB 鍜岄儴缃插弬鏁帮紝鍒涘缓骞舵牎楠屾柊 access.json銆備负闇€瑕佷繚鐣欐敹浠剁鐨勬垚鍛樹娇鐢ㄥ師 name锛涙柊閰嶇疆鏄敮涓€鎺堟潈鏉ユ簮锛屾棫鏁版嵁搴撶殑 revoked_at 涓嶅啀鍐冲畾璁块棶鏉冮檺銆?2. 鍋滄鏃ф湇鍔°€佹浛鎹㈡簮鐮佸拰 lockfile銆丯ode 24 涓?`npm ci`锛岃缃悓涓€ DB 璺緞鍙婃柊 access.json銆?3. 鏂颁腑蹇冨惎鍔ㄦ椂鍏堥獙璇侀厤缃紝鍐嶅紑鍚?DB锛泂chema 鍒濆鍖?杩佺Щ鍦ㄤ簨鍔′腑鎵ц锛?*鍒犻櫎鏃?tokens 琛ㄥ強鍏剁储寮?*锛屼繚鐣?members 鍘嗗彶琛屼笌 messages銆傛秷鎭?id銆佹枃鏈€侀」鐩€乺eply_to銆乺ead_at銆佸垱寤烘椂闂村拰鑷搴忓垪涓嶉噸鍐欍€傛柊閰嶇疆缂哄皯鐨勬棫鎴愬憳浠嶄繚鐣欑敤浜庡閿紝浣嗕笉鑳借闂垨鎴愪负鏂版敹浠朵汉銆?4. 灏嗘柊閰嶇疆鎴愬憳 INSERT OR IGNORE 鍒板巻鍙?members 琛紱褰撳墠 peers 浠庨厤缃繑鍥炪€傛棫 display_name/revoked_at 鍙綔鍘嗗彶鍏煎鍒楋紝涓嶅綋鎺堟潈銆?5. 鏍稿 doctor銆佸綋鍓嶆垚鍛樸€佸巻鍙叉秷鎭互鍙婂彈鎺ф敹鍙戙€傛湭鏉ユ湭鐭?schema 鍗囩骇涓嶈兘鎹淇濊瘉鑷姩鍏煎锛涘綋鍓嶅彧鏄庣‘鏀寔浠撳簱鏃х増鍒版湰 IP 鏂规鐨勮縼绉汇€?
+杩佺Щ涓嶄涪娑堟伅锛屼絾涓嶈兘鐩存帴鐢ㄦ棫绋嬪簭鍥炴粴鍒板凡鍒犻櫎鍑嵁琛ㄧ殑鏂?DB銆傝鍥炴粴鏃х増鏈紝椤诲仠鏈嶅悗鎭㈠**鍗囩骇鍓嶅浠藉強鏃т唬鐮?*锛屼細澶卞幓澶囦唤鍚庣殑鏂版秷鎭紱鍏堢‘璁や笟鍔℃帴鍙楄鍥為€€杈圭晫銆備笉瑕佽鏃с€佹柊涓績鍚屾椂鎵撳紑鍚屼竴 DB銆?
+## 澶囦唤锛歏ACUUM INTO
 
 ```powershell
-$env:MSG_DB_PATH = 'D:\msg-mcp\data\msg.sqlite'
+$env:MSG_DB_PATH = 'D:\team-mailbox\data\msg.sqlite'
 npm run admin -- backup 'D:\msg-backups\msg-20260920-01.sqlite'
 ```
 
-admin backup 只读打开既有源 DB，不初始化/迁移；实际执行 SQLite `VACUUM INTO ?` 创建一致的独立数据库文件。目标必须不存在（拒绝覆盖），缺父目录会创建。可在线备份，注意空闲空间、权限和锁等待，繁忙时可失败后选择低峰重试。不是热复制运行中的主 DB。
-
-备份 JSON 映射和部署参数需单独保存，DB 备份不包含 access.json。所有备份含明文消息，应限制文件访问。用以下命令检查产物：
+admin backup 鍙鎵撳紑鏃㈡湁婧?DB锛屼笉鍒濆鍖?杩佺Щ锛涘疄闄呮墽琛?SQLite `VACUUM INTO ?` 鍒涘缓涓€鑷寸殑鐙珛鏁版嵁搴撴枃浠躲€傜洰鏍囧繀椤讳笉瀛樺湪锛堟嫆缁濊鐩栵級锛岀己鐖剁洰褰曚細鍒涘缓銆傚彲鍦ㄧ嚎澶囦唤锛屾敞鎰忕┖闂茬┖闂淬€佹潈闄愬拰閿佺瓑寰咃紝绻佸繖鏃跺彲澶辫触鍚庨€夋嫨浣庡嘲閲嶈瘯銆備笉鏄儹澶嶅埗杩愯涓殑涓?DB銆?
+澶囦唤 JSON 鏄犲皠鍜岄儴缃插弬鏁伴渶鍗曠嫭淇濆瓨锛孌B 澶囦唤涓嶅寘鍚?access.json銆傛墍鏈夊浠藉惈鏄庢枃娑堟伅锛屽簲闄愬埗鏂囦欢璁块棶銆傜敤浠ヤ笅鍛戒护妫€鏌ヤ骇鐗╋細
 
 ```powershell
 npm run doctor -- --db-path 'D:\msg-backups\msg-20260920-01.sqlite' --skip-server
 ```
 
-首次迁移前也可使用新 admin backup 备份旧库；它不会执行 DROP TABLE。完整恢复演练仍需在隔离环境完成。
+棣栨杩佺Щ鍓嶄篃鍙娇鐢ㄦ柊 admin backup 澶囦唤鏃у簱锛涘畠涓嶄細鎵ц DROP TABLE銆傚畬鏁存仮澶嶆紨缁冧粛闇€鍦ㄩ殧绂荤幆澧冨畬鎴愩€?
+## 鎭㈠锛氬仠鏈嶅姟骞堕殧绂绘棫 WAL
 
-## 恢复：停服务并隔离旧 WAL
-
-没有 restore CLI。恢复目标必须明确，禁止通配/递归清空数据目录。
-
-1. 验证备份可打开、完整性与 schema 正确，确定 DB 目标绝对路径、代码版本和对应映射配置。
-2. 停止中心，关闭所有 admin/doctor/SQLite 进程，确认没有其他进程/容器访问同一 DB。
-3. 创建一个全新空隔离目录，逐一移走旧 `msg.sqlite` 和存在时的 `msg.sqlite-wal`、`msg.sqlite-shm`，保留为同一旧状态集合。任一步失败就停下调查。
-4. 确认目标位置无旧主库/WAL/SHM，再将独立备份复制为目标 `msg.sqlite`；不要复制旧 WAL/SHM 回去。
-5. 使用 doctor 的显式只读 DB 检查，核对恢复的 access.json 和成员分配，再启动中心。身份取决于 JSON，不从旧备份自动恢复；旧消息重新出现时同事应刷新缓存的 id 选择。
-
-若目标是 `D:\msg-mcp\data\msg.sqlite`，只处理这三个精确路径：
+娌℃湁 restore CLI銆傛仮澶嶇洰鏍囧繀椤绘槑纭紝绂佹閫氶厤/閫掑綊娓呯┖鏁版嵁鐩綍銆?
+1. 楠岃瘉澶囦唤鍙墦寮€銆佸畬鏁存€т笌 schema 姝ｇ‘锛岀‘瀹?DB 鐩爣缁濆璺緞銆佷唬鐮佺増鏈拰瀵瑰簲鏄犲皠閰嶇疆銆?2. 鍋滄涓績锛屽叧闂墍鏈?admin/doctor/SQLite 杩涚▼锛岀‘璁ゆ病鏈夊叾浠栬繘绋?瀹瑰櫒璁块棶鍚屼竴 DB銆?3. 鍒涘缓涓€涓叏鏂扮┖闅旂鐩綍锛岄€愪竴绉昏蛋鏃?`msg.sqlite` 鍜屽瓨鍦ㄦ椂鐨?`msg.sqlite-wal`銆乣msg.sqlite-shm`锛屼繚鐣欎负鍚屼竴鏃х姸鎬侀泦鍚堛€備换涓€姝ュけ璐ュ氨鍋滀笅璋冩煡銆?4. 纭鐩爣浣嶇疆鏃犳棫涓诲簱/WAL/SHM锛屽啀灏嗙嫭绔嬪浠藉鍒朵负鐩爣 `msg.sqlite`锛涗笉瑕佸鍒舵棫 WAL/SHM 鍥炲幓銆?5. 浣跨敤 doctor 鐨勬樉寮忓彧璇?DB 妫€鏌ワ紝鏍稿鎭㈠鐨?access.json 鍜屾垚鍛樺垎閰嶏紝鍐嶅惎鍔ㄤ腑蹇冦€傝韩浠藉彇鍐充簬 JSON锛屼笉浠庢棫澶囦唤鑷姩鎭㈠锛涙棫娑堟伅閲嶆柊鍑虹幇鏃跺悓浜嬪簲鍒锋柊缂撳瓨鐨?id 閫夋嫨銆?
+鑻ョ洰鏍囨槸 `D:\team-mailbox\data\msg.sqlite`锛屽彧澶勭悊杩欎笁涓簿纭矾寰勶細
 
 ```text
-D:\msg-mcp\data\msg.sqlite
-D:\msg-mcp\data\msg.sqlite-wal
-D:\msg-mcp\data\msg.sqlite-shm
+D:\team-mailbox\data\msg.sqlite
+D:\team-mailbox\data\msg.sqlite-wal
+D:\team-mailbox\data\msg.sqlite-shm
 ```
 
-旧文件在恢复确认前保留，不能仅覆盖主文件混用旧 WAL。定期在独立目录演练，避免首次故障时才验证流程。
-
-## Docker：受限参考，不推荐默认团队身份部署
-
-**当前 Docker 不可用，本轮未执行构建、部署或恢复。** NAT/桌面 Docker/端口转发可能替换来源 IP。当前实现不信任代理头，Docker 启动成功也不证明能够区分成员；不能把网关 IP 映射为某人后宣称所有同事已接入。
-
-Dockerfile 基于 `node:24-alpine`、镜像内 `npm ci --omit=dev`、工作目录 `/app`。Compose 将 `/data` 挂到命名卷 `msg-data`，物理卷名由项目名决定；只读绑定宿主 `access.json` 为 `/app/access.json`，缺文件拒绝创建目录代替。宿主默认只发布 `127.0.0.1:8787:8787`，容器内监听 `0.0.0.0`。
-
-先由管理员在隔离环境证明来源保真，再考虑部署。源码目录下参考命令：
+鏃ф枃浠跺湪鎭㈠纭鍓嶄繚鐣欙紝涓嶈兘浠呰鐩栦富鏂囦欢娣风敤鏃?WAL銆傚畾鏈熷湪鐙珛鐩綍婕旂粌锛岄伩鍏嶉娆℃晠闅滄椂鎵嶉獙璇佹祦绋嬨€?
+## Docker锛氬彈闄愬弬鑰冿紝涓嶆帹鑽愰粯璁ゅ洟闃熻韩浠介儴缃?
+**褰撳墠 Docker 涓嶅彲鐢紝鏈疆鏈墽琛屾瀯寤恒€侀儴缃叉垨鎭㈠銆?* NAT/妗岄潰 Docker/绔彛杞彂鍙兘鏇挎崲鏉ユ簮 IP銆傚綋鍓嶅疄鐜颁笉淇′换浠ｇ悊澶达紝Docker 鍚姩鎴愬姛涔熶笉璇佹槑鑳藉鍖哄垎鎴愬憳锛涗笉鑳芥妸缃戝叧 IP 鏄犲皠涓烘煇浜哄悗瀹ｇО鎵€鏈夊悓浜嬪凡鎺ュ叆銆?
+Dockerfile 鍩轰簬 `node:24-alpine`銆侀暅鍍忓唴 `npm ci --omit=dev`銆佸伐浣滅洰褰?`/app`銆侰ompose 灏?`/data` 鎸傚埌鍛藉悕鍗?`msg-data`锛岀墿鐞嗗嵎鍚嶇敱椤圭洰鍚嶅喅瀹氾紱鍙缁戝畾瀹夸富 `access.json` 涓?`/app/access.json`锛岀己鏂囦欢鎷掔粷鍒涘缓鐩綍浠ｆ浛銆傚涓婚粯璁ゅ彧鍙戝竷 `127.0.0.1:8787:8787`锛屽鍣ㄥ唴鐩戝惉 `0.0.0.0`銆?
+鍏堢敱绠＄悊鍛樺湪闅旂鐜璇佹槑鏉ユ簮淇濈湡锛屽啀鑰冭檻閮ㄧ讲銆傛簮鐮佺洰褰曚笅鍙傝€冨懡浠わ細
 
 ```powershell
 docker compose build msg-server
@@ -128,27 +90,23 @@ docker compose exec msg-server node src/admin.js validate-config
 docker compose exec msg-server node src/admin.js list-members
 ```
 
-逐条检查退出码。Compose 固定 MSG_ACCESS_CONFIG/MSG_DB_PATH/MSG_HOST/MSG_PORT，不自动加载宿主 `.env` 同名值。更新 bind 配置文件后应重建服务容器以确保映射文件更新，例如 `docker compose up -d --force-recreate msg-server`；不要假定容器内 loopback doctor 代表宿主/成员路径。
-
-备份仍使用相同卷中的 VACUUM INTO 产物：
-
+閫愭潯妫€鏌ラ€€鍑虹爜銆侰ompose 鍥哄畾 MSG_ACCESS_CONFIG/MSG_DB_PATH/MSG_HOST/MSG_PORT锛屼笉鑷姩鍔犺浇瀹夸富 `.env` 鍚屽悕鍊笺€傛洿鏂?bind 閰嶇疆鏂囦欢鍚庡簲閲嶅缓鏈嶅姟瀹瑰櫒浠ョ‘淇濇槧灏勬枃浠舵洿鏂帮紝渚嬪 `docker compose up -d --force-recreate msg-server`锛涗笉瑕佸亣瀹氬鍣ㄥ唴 loopback doctor 浠ｈ〃瀹夸富/鎴愬憳璺緞銆?
+澶囦唤浠嶄娇鐢ㄧ浉鍚屽嵎涓殑 VACUUM INTO 浜х墿锛?
 ```powershell
 docker compose exec msg-server node src/admin.js backup /data/backups/msg-20260920-01.sqlite
 docker compose cp msg-server:/data/backups/msg-20260920-01.sqlite 'D:\msg-backups\msg-20260920-01.sqlite'
 ```
 
-导出前确认宿主父目录存在、目标不存在。只留在原卷的备份不能应对卷损坏。
-
-### Docker 停服恢复参考
-
-保持同一 Compose 项目及原服务容器，不删除卷。停止所有同卷访问者：
+瀵煎嚭鍓嶇‘璁ゅ涓荤埗鐩綍瀛樺湪銆佺洰鏍囦笉瀛樺湪銆傚彧鐣欏湪鍘熷嵎鐨勫浠戒笉鑳藉簲瀵瑰嵎鎹熷潖銆?
+### Docker 鍋滄湇鎭㈠鍙傝€?
+淇濇寔鍚屼竴 Compose 椤圭洰鍙婂師鏈嶅姟瀹瑰櫒锛屼笉鍒犻櫎鍗枫€傚仠姝㈡墍鏈夊悓鍗疯闂€咃細
 
 ```powershell
 docker compose stop msg-server
 docker compose run --rm --no-deps --entrypoint sh msg-server
 ```
 
-下列是维护容器内的 **Linux sh**，不是 PowerShell；每步成功后继续，隔离目录必须全新：
+涓嬪垪鏄淮鎶ゅ鍣ㄥ唴鐨?**Linux sh**锛屼笉鏄?PowerShell锛涙瘡姝ユ垚鍔熷悗缁х画锛岄殧绂荤洰褰曞繀椤诲叏鏂帮細
 
 ```sh
 mkdir /data/pre-restore-20260920-01
@@ -158,7 +116,7 @@ if [ -e /data/msg.sqlite-shm ]; then mv /data/msg.sqlite-shm /data/pre-restore-2
 exit
 ```
 
-回到 PowerShell，确认无旧 WAL/SHM，再复制到仍存在的已停服务容器的挂载卷：
+鍥炲埌 PowerShell锛岀‘璁ゆ棤鏃?WAL/SHM锛屽啀澶嶅埗鍒颁粛瀛樺湪鐨勫凡鍋滄湇鍔″鍣ㄧ殑鎸傝浇鍗凤細
 
 ```powershell
 docker compose cp 'D:\msg-backups\msg-20260920-01.sqlite' msg-server:/data/msg.sqlite
@@ -166,4 +124,4 @@ docker compose run --rm --no-deps msg-server node src/doctor.js --db-path /data/
 docker compose start msg-server
 ```
 
-核对所有者/权限、JSON 映射和来源保真后再允许成员访问。升级镜像前保留旧版本/镜像标识，不能只记 latest；同一项目 `build` 后 `up -d` 保留命名卷。来源问题未验证前，不将 Docker 示例作为团队可用方案。
+鏍稿鎵€鏈夎€?鏉冮檺銆丣SON 鏄犲皠鍜屾潵婧愪繚鐪熷悗鍐嶅厑璁告垚鍛樿闂€傚崌绾ч暅鍍忓墠淇濈暀鏃х増鏈?闀滃儚鏍囪瘑锛屼笉鑳藉彧璁?latest锛涘悓涓€椤圭洰 `build` 鍚?`up -d` 淇濈暀鍛藉悕鍗枫€傛潵婧愰棶棰樻湭楠岃瘉鍓嶏紝涓嶅皢 Docker 绀轰緥浣滀负鍥㈤槦鍙敤鏂规銆?

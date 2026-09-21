@@ -1,11 +1,11 @@
 {
-  "name": "msg-mcp",
+  "name": "team-mailbox",
   "version": "0.1.0",
   "private": true,
   "engines": { "node": ">=24 <25" },
   "files": ["src/", "docs/", "README.md", "access.example.json", ".env.example", "compose.yaml", "Dockerfile", "package-lock.json"],
   "type": "module",
-  "description": "Lightweight LAN text message box with MCP stdio bridge",
+  "description": "Lightweight LAN team mailbox with MCP stdio bridge",
   "scripts": {
     "start": "node src/server.js",
     "mcp": "node src/mcp.js",

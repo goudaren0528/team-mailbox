@@ -71,7 +71,7 @@ async function handleToolCall(fn) {
 export function createMcpServer() {
   serverBaseUrl(serverUrl);
   const mcpServer = new McpServer({
-    name: 'msg-mcp-bridge',
+    name: 'team-mailbox-bridge',
     version: '0.1.0',
   });
 

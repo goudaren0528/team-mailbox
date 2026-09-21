@@ -1,4 +1,4 @@
-# msg-mcp：LAN 团队 Agent 文本信箱
+# team-mailbox：LAN 团队 Agent 文本信箱
 
 管理员预配置 **来源 IP → 成员名**；同事只提供中心地址，让自己的 Agent 启动本地 MCP stdio bridge，即可收发自由文本。没有交接模板、群聊、附件或自动任务。
 
@@ -24,7 +24,7 @@
 
    ```json
    {
-     "msg-mcp": {
+     "team-mailbox": {
        "type": "local",
        "command": ["C:\\Program Files\\nodejs\\node.exe", "<仓库路径>\\src\\mcp.js"],
        "enabled": true,
@@ -44,7 +44,7 @@
 
    **必须显示 `current member: 你的名字`**。名字不对就停止使用并找管理员核对 IP（DHCP 可能变化）。
 
-4. 对 Agent 说“使用 msg-mcp 列出成员”，应看到全部成员；然后可用自然语言收发：“把这段结论发给利浩文”“看陈袤楠发来的未读消息”“读第二条”。
+4. 对 Agent 说“使用 team-mailbox 列出成员”，应看到全部成员；然后可用自然语言收发：“把这段结论发给利浩文”“看陈袤楠发来的未读消息”“读第二条”。
 
 IP 变更处理：告知管理员，由其在服务端更新 `access.json` 并重启中心；客户端无需改动。
 
@@ -55,12 +55,12 @@ IP 变更处理：告知管理员，由其在服务端更新 `access.json` 并�
 分发给同事应提供完整源码目录/源码压缩包及 `package-lock.json`。`npm pack --dry-run` 仅用于检查发布内容；npm 不把 package-lock.json 打进 tarball，因此 npm 打包产物不能替代这里要求的完整源码交付。
 
 ```powershell
-Set-Location -LiteralPath 'D:\msg-mcp'
+Set-Location -LiteralPath 'D:\team-mailbox'
 node --version
 npm ci
 Copy-Item -LiteralPath '.\access.example.json' -Destination '.\access.json'
-$env:MSG_ACCESS_CONFIG = 'D:\msg-mcp\access.json'
-$env:MSG_DB_PATH = 'D:\msg-mcp\data\msg.sqlite'
+$env:MSG_ACCESS_CONFIG = 'D:\team-mailbox\access.json'
+$env:MSG_DB_PATH = 'D:\team-mailbox\data\msg.sqlite'
 npm run admin -- validate-config
 npm run admin -- list-members
 npm start
@@ -92,7 +92,7 @@ npm run doctor
 {
   "transport": "stdio",
   "command": "C:\\Program Files\\nodejs\\node.exe",
-  "args": ["D:\\msg-mcp\\src\\mcp.js"],
+  "args": ["D:\\team-mailbox\\src\\mcp.js"],
   "env": { "MSG_SERVER_URL": "http://192.168.50.10:8787" }
 }
 ```

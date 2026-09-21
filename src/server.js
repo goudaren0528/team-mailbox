@@ -78,7 +78,7 @@ export function createServer(options = {}) {
 
       if (method === 'GET' && pathname === '/health') {
         return sendJson(res, 200, {
-          service: 'msg-mcp',
+          service: 'team-mailbox',
           status: 'ok',
           time: new Date().toISOString(),
           member,
@@ -288,7 +288,7 @@ const isMain = import.meta.url === `file://${process.argv[1]}` ||
 if (isMain) {
   const serverInstance = createServer();
   serverInstance.start(CONFIG.port, CONFIG.host).then(({ url }) => {
-    console.log(`msg-mcp server listening at ${url}`);
+    console.log(`team-mailbox server listening at ${url}`);
     console.log(`Database path: ${process.env.MSG_DB_PATH || CONFIG.dbPath}`);
   }).catch((err) => {
     console.error('Failed to start server:', err);

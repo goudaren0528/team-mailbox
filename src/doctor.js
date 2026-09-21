@@ -8,7 +8,7 @@ import { apiUrl } from './url.js';
 import { memberNameSchema } from './validation.js';
 
 const healthSchema = z.object({
-  service: z.literal('msg-mcp'), status: z.literal('ok'), time: z.string().datetime(),
+  service: z.literal('team-mailbox'), status: z.literal('ok'), time: z.string().datetime(),
   member: z.object({ name: memberNameSchema, displayName: z.string().min(1) }).strict(),
 }).strict();
 
@@ -69,7 +69,7 @@ export async function runDoctor(argv = process.argv) {
       const res = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'error' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const health = healthSchema.parse(await res.json());
-      console.log(`[PASS] msg-mcp healthy; current member: ${health.member.name}`);
+      console.log(`[PASS] team-mailbox healthy; current member: ${health.member.name}`);
     } catch (err) { console.error(`[FAIL] Remote: ${err.message}`); failures++; }
   }
   console.log(failures ? 'Diagnostics FAILED' : 'Selected diagnostics PASSED (not a full messaging test)');

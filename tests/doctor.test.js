@@ -28,7 +28,7 @@ test('Doctor rejects invalid health status/schema/JSON and redirects', async t =
   const server = http.createServer((req, res) => {
     if (req.url === '/other') redirected = true;
     if (mode === 'redirect') { res.writeHead(302, { Location: '/other' }); res.end(); return; }
-    const valid = { service: 'msg-mcp', status: 'ok', time: new Date().toISOString(), member: { name: 'A', displayName: 'A' } };
+    const valid = { service: 'team-mailbox', status: 'ok', time: new Date().toISOString(), member: { name: 'A', displayName: 'A' } };
     if (mode === 'status') valid.status = 'not-ok';
     if (mode === 'member') delete valid.member;
     if (mode === 'service') valid.service = 'other';
