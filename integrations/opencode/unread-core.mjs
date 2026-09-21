@@ -75,7 +75,23 @@ export function normalizeBaseUrl(raw) {
     return undefined
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return undefined
+  if (url.username || url.password || text.includes("?") || text.includes("#")) return undefined
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`
+}
+
+/** Options are authoritative when present, including invalid values (fail closed). */
+export function resolveConfig(options, env = {}) {
+  if (options !== undefined && !isPlainObject(options)) return undefined
+  const has = (key) => options !== undefined && Object.hasOwn(options, key)
+  const baseUrl = normalizeBaseUrl(has("serverUrl") ? options.serverUrl : env.MSG_SERVER_URL)
+  if (!baseUrl) return undefined
+  if (has("pollMs") && (typeof options.pollMs !== "number" || !Number.isFinite(options.pollMs) || options.pollMs <= 0)) {
+    return undefined
+  }
+  return {
+    baseUrl,
+    pollMs: resolvePollMs(has("pollMs") ? options.pollMs : env.MSG_UNREAD_POLL_MS),
+  }
 }
 
 /**
@@ -176,6 +192,7 @@ export async function fetchSummary(url, options = {}) {
   try {
     const response = await fetchImpl(url, {
       method: "GET",
+      redirect: "error",
       signal: controller.signal,
       headers: { accept: "application/json" },
     })

@@ -67,12 +67,13 @@ IPv4-mapped IPv6 会按 IPv4 匹配；mapped CIDR 前缀至少 /96，例如 `/12
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
-| 侧栏完全没有未读区块，其他插件正常 | `tui.json` 里没声明该插件 | 插件是 `.tsx`，OpenCode 自动扫描只匹配 `plugins/*.ts` 和 `*.js`，**不含 `.tsx`**，必须在 `tui.json` 的 `plugin` 数组显式列出，例如 `["./plugins/team-mailbox-unread.tsx"]` |
+| 侧栏完全没有未读区块，其他插件正常 | `tui.json` 里没声明该插件 | 在 `plugin` 数组声明 `["./plugins/team-mailbox-unread.tsx",{"serverUrl":"http://<central-host>:8787","pollMs":30000}]`，替换占位符；先备份，更新已有项，不重复追加，见[插件说明](../integrations/opencode/README.md) |
+| pull 后仍不显示 | 安装副本未更新、未重启、侧栏折叠或没有未读 | 从自己的更新仓库重新复制覆盖两个安装文件，更新已有 tuple 后完全退出重启、进入会话并展开侧栏；中心可达且有未读时至多约 30 秒显示。`get_unread_summary` 返回 `total: 0` 时本来就不显示 |
 | 已经在 `opencode.json` 里写了 `plugin` 仍不显示 | 写错了文件 | TUI 插件列表**只读 `tui.json`**；`opencode.json` 的 `plugin` 键是给 server 侧插件用的，写在那里对侧栏无效 |
 | 声明了却仍不显示，OpenCode 日志有模块解析错误 | `team-mailbox-unread.tsx` 和 `unread-core.mjs` 不在同一目录 | 入口用相对路径 `./unread-core.mjs` 导入，**两个文件必须放在同一目录**，只复制一个不行 |
-| 配置都对，仍然什么都不渲染 | `MSG_SERVER_URL` 未配置，或不是合法 http/https URL | 插件在这种情况下**刻意不渲染也不报错**。变量必须对**启动 OpenCode 的那个进程**可见；插件在 TUI 进程内运行，**不会**继承 MCP 配置里的环境变量 |
+| 配置都对，仍然什么都不渲染 | 中心地址缺失或显式选项非法 | 推荐 `tui.json` tuple：`["./plugins/team-mailbox-unread.tsx", {"serverUrl":"https://mailbox.example.invalid","pollMs":30000}]`，替换为管理员提供的中心地址（不是本地 Node/script 路径）。选项逐键优先于 env，显式非法不回退；禁止 URL 凭据/query/hash 和重定向。`MCP.environment` 只给子进程不给 TUI，Windows 无需永久 env。由用户后续重启生效 |
 | 曾经显示过，现在停在旧数字不再更新 | 中心不可达、超时、返回异常 | 插件静默跳过本轮并保留上次成功结果，**不会标注结果已陈旧**。用 `npm run doctor` 确认中心可达；恢复后下一轮自动刷新 |
-| 未读数刷新很慢 | 轮询是定时拉取，非实时 | 默认 30 秒；`MSG_UNREAD_POLL_MS` 可调，但**最低 10000 毫秒**，更低按 10000 处理，非法值回落 30000。没有实时推送 |
+| 未读数刷新很慢 | 轮询是定时拉取，非实时 | `pollMs` 优先，缺省才读 `MSG_UNREAD_POLL_MS`，默认 30 秒、最低 10000 毫秒。显式选项须为有限正数，非法会停用插件；env 非法回落默认。没有实时推送 |
 | 来源 IP 未映射 | 插件所在机器 IP 不在 access.json | 汇总接口同样返回 403，插件静默不显示。找管理员核对 IP，同 `403` 一节 |
 | 升级 OpenCode 后侧栏消失 | `sidebar_content` slot 是**源码级接口、官方文档未记载**，升级可能变更或消失 | 只影响侧栏显示；消息收发和全部 MCP 工具不受影响。可改用 `get_unread_summary` 工具主动查询，或等插件适配 |
 | 发件人很多，只看到 10 行 | 最多渲染 10 行，超出**不显示也不提示** | 这是既定行为。读掉一些消息后剩余发件人会自然显示 |

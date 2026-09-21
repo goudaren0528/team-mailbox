@@ -20,6 +20,7 @@ import {
   normalizeBaseUrl,
   parseSummary,
   resolvePollMs,
+  resolveConfig,
   toLines,
 } from "./unread-core.mjs"
 
@@ -183,6 +184,47 @@ test("base url normalization and summary url", () => {
   assert.equal(normalizeBaseUrl(" http://example.invalid:8787//  "), "http://example.invalid:8787")
   assert.equal(normalizeBaseUrl("https://example.invalid/base/"), "https://example.invalid/base")
   assert.equal(buildSummaryUrl("http://example.invalid:8787"), "http://example.invalid:8787/api/unread-summary")
+})
+
+test("explicit options work with empty env and override conflicting env", () => {
+  const options = { serverUrl: "https://center.example.invalid/", pollMs: 15000 }
+  const expected = { baseUrl: "https://center.example.invalid", pollMs: 15000 }
+  assert.deepEqual(resolveConfig(options, {}), expected)
+  assert.deepEqual(resolveConfig(options, { MSG_SERVER_URL: "https://other.example.invalid", MSG_UNREAD_POLL_MS: "60000" }), expected)
+})
+
+test("absent options fall back independently to env, default and minimum interval", () => {
+  const env = { MSG_SERVER_URL: "https://center.example.invalid", MSG_UNREAD_POLL_MS: "45000" }
+  assert.deepEqual(resolveConfig(undefined, env), { baseUrl: env.MSG_SERVER_URL, pollMs: 45000 })
+  assert.equal(resolveConfig({ pollMs: 1 }, env).pollMs, 10000)
+  assert.equal(resolveConfig({ serverUrl: env.MSG_SERVER_URL }, {}).pollMs, 30000)
+  assert.equal(resolveConfig({ serverUrl: env.MSG_SERVER_URL }, env).pollMs, 45000)
+  assert.equal(resolveConfig({}, {}), undefined)
+})
+
+test("explicit invalid options never fall back to another center or env interval", () => {
+  const env = { MSG_SERVER_URL: "https://fallback.example.invalid", MSG_UNREAD_POLL_MS: "60000" }
+  for (const serverUrl of [undefined, null, "", " ", 123, "bad", "file:///script", "https://user:pass@example.invalid", "https://example.invalid?", "https://example.invalid#", "https://example.invalid?q=1", "https://example.invalid/#fragment"]) {
+    assert.equal(resolveConfig({ serverUrl }, env), undefined)
+    assert.equal(normalizeBaseUrl(serverUrl), undefined)
+  }
+  for (const pollMs of [undefined, null, "30000", "", 0, -1, NaN, Infinity, {}, []]) {
+    assert.equal(resolveConfig({ pollMs }, env), undefined)
+  }
+  for (const options of [null, [], "bad", 42]) assert.equal(resolveConfig(options, env), undefined)
+})
+
+test("requests explicitly reject redirects instead of following another center", async () => {
+  let calls = 0
+  assert.equal(await fetchSummary("https://center.example.invalid/api/unread-summary", {
+    fetchImpl: async (_url, init) => {
+      calls++
+      assert.equal(init.redirect, "error")
+      assert.equal(init.method, "GET")
+      return { ok: false, status: 302 }
+    },
+  }), undefined)
+  assert.equal(calls, 1)
 })
 
 test("fetchSummary degrades silently on every failure mode", async () => {
