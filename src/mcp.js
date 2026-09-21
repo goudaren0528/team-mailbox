@@ -99,7 +99,7 @@ export function createMcpServer() {
       text: z.string().min(1).max(CONFIG.maxTextChars).describe(`Message text (max ${CONFIG.maxTextChars} characters)`),
       title: z.string().max(CONFIG.maxTitleChars).optional().describe('Optional message subject/title (max 100 characters)'),
       project: z.string().max(CONFIG.maxProjectChars).optional().describe('Optional project/topic tag (max 50 characters)'),
-      reply_to: z.number().int().positive().optional().describe('Optional message ID being replied to. Must be a conversation involving current user.'),
+      reply_to: z.number().int().positive().optional().describe('Optional. OMIT THIS unless the user explicitly asks to reply to a specific message. Must be a real message ID just obtained from getmsg in which the current user is sender or recipient, and `to` must be the other party of that conversation. Never guess an ID or reuse one from earlier context.'),
     },
     async (params) => handleToolCall(async () => {
       return await requestApi('/api/messages', 'POST', params);
@@ -173,7 +173,7 @@ export function createMcpServer() {
       title: z.string().max(CONFIG.maxTitleChars).optional().describe('Optional message subject/title'),
       text: z.string().max(CONFIG.maxTextChars).optional().describe('Optional accompanying message text'),
       project: z.string().max(CONFIG.maxProjectChars).optional().describe('Optional project/topic tag'),
-      reply_to: z.number().int().positive().optional().describe('Optional message ID being replied to'),
+      reply_to: z.number().int().positive().optional().describe('Optional. OMIT THIS unless the user explicitly asks to reply to a specific message. Must be a real message ID just obtained from getmsg in which the current user is sender or recipient, and `to` must be the other party of that conversation. Never guess an ID or reuse one from earlier context.'),
     },
     async ({ to, path: filePath, title, text, project, reply_to: replyTo }) => handleToolCall(async () => {
       if (!path.isAbsolute(filePath)) throw new Error(`Path must be absolute: ${filePath}`);

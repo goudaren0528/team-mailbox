@@ -174,14 +174,16 @@ export function createServer(options = {}) {
         if (msgData.reply_to) {
           const original = getMessageById(db, msgData.reply_to);
           if (!original) {
-            return sendJson(res, 400, { error: `Referenced reply_to message ${msgData.reply_to} does not exist` });
+            return sendJson(res, 400, {
+              error: `Referenced reply_to message ${msgData.reply_to} does not exist. Omit reply_to, or call getmsg first and use a real message ID from the result.`,
+            });
           }
 
           const currentMember = req.member.name;
           const isParticipant = original.from === currentMember || original.to === currentMember;
           if (!isParticipant) {
             return sendJson(res, 403, {
-              error: 'Cannot reply to message: current member was neither sender nor recipient of original message',
+              error: `Cannot reply to message ${msgData.reply_to}: you are neither its sender nor its recipient. Retry without reply_to, or use a message ID from your own getmsg result.`,
             });
           }
 
