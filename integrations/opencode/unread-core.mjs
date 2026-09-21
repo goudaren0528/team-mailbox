@@ -21,6 +21,10 @@ export const MAX_ROWS = 10
 export const REQUEST_TIMEOUT_MS = 5000
 /** Sidebar block title. */
 export const TITLE = "未读消息"
+/** Decorative title marker. Text remains understandable if the emoji cannot render. */
+export const TITLE_ICON = "📬"
+/** Decorative attachment marker. The word "附件" is always kept as text. */
+export const ATTACHMENT_ICON = "📎"
 
 const SUMMARY_PATH = "/api/unread-summary"
 
@@ -143,8 +147,19 @@ export function parseSummary(value) {
 }
 
 /**
- * Format one sender row: `<发件人>  <N> 条 · <M> 附件`.
+ * Format the sidebar title: `📬 未读消息 · <total>`.
+ *
+ * @param {{total: number}} summary
+ * @returns {string}
+ */
+export function formatTitle(summary) {
+  return `${TITLE_ICON} ${TITLE} · ${summary.total}`
+}
+
+/**
+ * Format one sender row: `<发件人>  <N> 条 · 📎 <M> 附件`.
  * The attachment segment is omitted when the sender has no unread attachments.
+ * Emoji is decorative only: the row still includes "条" and "附件" text.
  *
  * @param {{name: string, count: number, attachments: number}} sender
  * @returns {string}
@@ -152,7 +167,21 @@ export function parseSummary(value) {
 export function formatSenderLine(sender) {
   const head = `${sender.name}  ${sender.count} 条`
   if (!sender.attachments) return head
-  return `${head} · ${sender.attachments} 附件`
+  return `${head} · ${ATTACHMENT_ICON} ${sender.attachments} 附件`
+}
+
+/**
+ * Shape one sender for styled rendering in the TUI.
+ *
+ * @param {{name: string, count: number, attachments: number}} sender
+ * @returns {{name: string, countText: string, attachmentText: string | undefined}}
+ */
+export function formatSenderRow(sender) {
+  return {
+    name: sender.name,
+    countText: `${sender.count} 条`,
+    attachmentText: sender.attachments ? `${ATTACHMENT_ICON} ${sender.attachments} 附件` : undefined,
+  }
 }
 
 /**
@@ -169,6 +198,21 @@ export function toLines(summary) {
   if (!summary) return []
   if (summary.total === 0) return []
   return summary.senders.slice(0, MAX_ROWS).map(formatSenderLine)
+}
+
+/**
+ * Turn a validated summary into a render model for the sidebar.
+ *
+ * @param {ReturnType<typeof parseSummary>} summary
+ * @returns {{title: string, rows: Array<ReturnType<typeof formatSenderRow>>} | undefined}
+ */
+export function toDisplayModel(summary) {
+  if (!summary) return undefined
+  if (summary.total === 0) return undefined
+  return {
+    title: formatTitle(summary),
+    rows: summary.senders.slice(0, MAX_ROWS).map(formatSenderRow),
+  }
 }
 
 /**

@@ -3,6 +3,7 @@ node_modules/
 
 # SQLite Database & Storage
 data/
+/downloads/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
