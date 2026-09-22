@@ -60,7 +60,7 @@ IP 变更处理：告知管理员，由其在服务端更新 `access.json` 并�
 > 2. 先读该仓库的 README.zh-CN.md、docs/client.md、docs/tools.md、docs/troubleshooting.md 再动手。
 > 3. 在我的 Agent 宿主里添加一个本地 stdio MCP 服务，名字 `team-mailbox`：command 用 node 可执行文件的**绝对路径**，args 用 `<仓库路径>\src\mcp.js` 的**绝对路径**，环境变量 `MSG_SERVER_URL` 设为 `http://<中心地址>:8787`。具体配置格式以我的宿主文档为准，不要照抄别的客户端格式。
 > 4. 重启宿主后验证：在 `<仓库路径>` 下设置 `MSG_SERVER_URL` 环境变量为同一地址，运行 `npm run doctor`，**必须显示 `current member:` 加上我的名字**。名字不对或报 403 就停下来告诉我，让我找管理员核对 IP，不要试图自报身份或改网络配置。
-> 5. 确认宿主能发现 9 个工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read`、`send_file`、`save_attachment`、`read_attachment_text`、`get_unread_summary`。调用 `list_peers` 应能看到团队成员。
+> 5. 确认宿主能发现 10 个工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read`、`send_file`、`save_attachment`、`read_attachment_text`、`get_unread_summary`、`receive_attachment`。调用 `list_peers` 应能看到团队成员。
 > 6. （可选，仅 OpenCode 用户）按[插件说明](integrations/opencode/README.md)安装：把本仓库 `integrations/opencode/` 下的 `team-mailbox-unread.tsx` 和 `unread-core.mjs` **两个文件一起**复制到 `~/.config/opencode/plugins/`（Windows：`%USERPROFILE%\.config\opencode\plugins\`），**两个文件必须在同一目录**。先备份同级配置目录已有的 `tui.json`，再配置 `{"$schema":"https://opencode.ai/tui.json","plugin":[["./plugins/team-mailbox-unread.tsx",{"serverUrl":"http://<central-host>:8787","pollMs":30000}]]}`。已有 team-mailbox 项就改为该 tuple，缺少才新增，保留其他插件与配置，不能重复追加。此 `.tsx` TUI 插件必须在 **`tui.json` 而不是 `opencode.json`** 显式声明。`serverUrl` 填管理员提供的共享中心地址，不是本机 localhost（除非本机就是中心）。无需永久/全局环境变量，MCP 的 environment 不会传回 TUI。完全退出并重启 OpenCode，进入会话、展开侧栏；中心可达且有未读时，至多约 30 秒应看到区块；`total: 0` 时不显示是正常行为。用 `get_unread_summary` 核对条数，用 `npm run doctor` 验证连通性和身份。
 > 7. 安装原生选择：把 integrations/opencode/skills/team-mailbox-read/ 文件夹复制到同作用域 skills/，commands/team-mailbox-read.md 复制到 command/。无需询问收件目录或添加 MSG_DOWNLOAD_DIR；首次保存由 bridge 在自身源码包根创建 downloads/，启动/列消息不创建，不复制中心 downloads。完全退出重启后用 /team-mailbox-read 原生选择，不读取真实消息作安装测试。
 >
@@ -143,7 +143,9 @@ npm run doctor
 
 对 Agent 说：“给 B 发一句：接口已更新，方便时看看。”或“列未读消息的 id 和摘要，让我选择。”
 
-九工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read`、`send_file`、`save_attachment`、`read_attachment_text`、`get_unread_summary`。中心入库即送达，接收方可离线；没有主动推送。按稳定 id 选择、分页列摘要、分段读正文。没有回复关联，归类只用可选的 `project` 标签，见[工具文档](docs/tools.md)。
+十工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read`、`send_file`、`save_attachment`、`read_attachment_text`、`get_unread_summary`、`receive_attachment`。中心入库即送达，接收方可离线；没有主动推送。按稳定 id 选择、分页列摘要、分段读正文。没有回复关联，归类只用可选的 `project` 标签，见[工具文档](docs/tools.md)。
+
+自动收件首选 `receive_attachment({attachment_id})`：唯一必填参数避免宿主将所有 schema 属性强制 required 后无法省略 path。bridge 首次收件时懒创建自身包根 downloads/，强制自动命名、不覆盖，兼容已有高级 MSG_DOWNLOAD_DIR。仅用户明确指定路径时使用 `save_attachment`，其旧契约保留。保存并完成哈希校验后再读正文；失败用原生 question 选择重试/明确跳过/取消；成功附 cleanupWarning 时报告警告，不重复下载。更新已安装的阅读 Skill 并重新连接客户端 bridge 以发现新工具；工具缺失时不要猜路径。无需重启中心或迁移数据库。
 
 **已读语义（破坏性变更）：** `getmsg` 列摘要不改已读，但 **`read_message` 读到正文末尾会自动标记已读**；分段读取的中间页不标记，纯附件消息单页即末尾也会标记。响应新增 `markedRead` 说明是否由本次调用触发。`mark_read` 保留，用于不读正文直接批量标记。没有「标记为未读」。
 
@@ -200,6 +202,6 @@ npm run doctor
 | --- | --- |
 | [管理员手册](docs/admin.md) | JSON 映射、LAN 开放、旧 DB 迁移、备份恢复、升级、Docker 限制 |
 | [同事接入](docs/client.md) | 通用 stdio 契约、仅地址配置、未读提醒与插件安装、安全接入指令 |
-| [工具说明](docs/tools.md) | 九工具、稳定 id、分页分段、项目标签、自动已读、未读概况、附件收发 |
+| [工具说明](docs/tools.md) | 十工具、稳定 id、分页分段、项目标签、自动已读、未读概况、附件收发 |
 | [排障](docs/troubleshooting.md) | doctor、403、配置失败、网络来源和侧栏不显示问题 |
 | [验证记录](docs/verification.md) | 真实 socket/SDK/回归证据及限制 |

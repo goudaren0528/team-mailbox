@@ -193,6 +193,10 @@ test('OpenCode skill/command installation contract and workflow guardrails (stat
   assert.match(command, /^---\r?\ndescription: .+\r?\n---/);
   assert.match(command, /`team-mailbox-read` skill through the skill tool/);
   assert.match(command, /\$ARGUMENTS/);
+  assert.match(skill, /call receive_attachment with only attachment_id/);
+  assert.match(skill, /update\/reconnect the client bridge/);
+  assert.match(skill, /successful result with cleanupWarning remains successful/);
+  assert.doesNotMatch(skill, /call save_attachment with only attachment_id/);
   for (const term of ['multiple=false', 'limit=10', 'RejectedError', 'MSG_DOWNLOAD_DIR', 'hasMore=false',
     'nextCursor/hasMore', 'Do not silently summarize', 'retry only read_message', 'not runtime enforcement']) {
     assert.ok(skill.includes(term), term);

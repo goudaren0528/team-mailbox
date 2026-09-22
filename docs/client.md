@@ -115,12 +115,12 @@ URL 仅支持 HTTP(S)，拒绝 userinfo、query、hash；禁止 redirect。路�
 
 **发送**（`send_file`）：给出本地文件的**绝对路径**，bridge 读文件、算 SHA-256、base64 上传，中心重算哈希比对后入库。0 字节文件、超过 10 MiB 的文件、相对路径、不存在的文件都会被拒绝。文件名超过 200 字符**直接拒绝，不会自动截断改名**。
 
-**保存**（`save_attachment`）——这几条是硬规则，接入时请一并告诉自己的 Agent：
+**保存**：自动收件首选 `receive_attachment({attachment_id})`，只有一个必填正整数 ID；没有可被宿主强制 required 的 path/overwrite 等可选属性。仅用户指定路径时使用 `save_attachment`，其旧行为保留兼容。接入时请一并告诉自己的 Agent：
 
 | 规则 | 说明 |
 | --- | --- |
 | 显式 path | 必须绝对路径；auto_name=true 时指已有目录，否则指文件，旧语义保留 |
-| 省略 path | 默认 bridge 包根 downloads/；强制 auto_name=true、overwrite=false，无需用户输入目录 |
+| 自动收件 | receive_attachment 默认 bridge 包根 downloads/；强制 auto_name=true、overwrite=false，无需用户输入目录；save_attachment 省略 path 的旧行为仍保留 |
 | 创建时机 | 仅默认目录首次保存时创建；显式 path 和高级绝对目录覆盖仍要求已有，启动/列表无创建副作用 |
 | 默认不覆盖 | 自动命名最多 100 个候选，原子硬链接发布避免同秒并发覆盖；显式文件路径已存在则拒绝 |
 | 授权覆盖 | 显式 path 且 overwrite=true 才使用 rename；默认目录模式禁止覆盖 |
@@ -164,7 +164,7 @@ npm run doctor
 
 ## 接入确认
 
-1. doctor 识别成员正确；宿主能发现九个工具。
+1. doctor 识别成员正确；宿主能发现十个工具。缺少 receive_attachment 时更新客户端 bridge 并重新连接刷新工具列表，更新已安装阅读 Skill；不要猜路径，无需重启中心。
 2. `list_peers({})` 显示当前配置成员，包含本人。
 3. 本人同意后向约定对象发送测试文本；保存实际返回 id。
 4. 对方按该 id 读取，明确要求时标已读。这些操作会保存真实消息/更改已读，不是无副作用安装探针。
