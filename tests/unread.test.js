@@ -145,11 +145,94 @@ test('Reading to the end marks read; paged middles do not; summary reflects it i
   assert.equal(emptied.total, 0);
   assert.deepEqual(emptied.senders, []);
 
-  // An offset past the end returns nothing but still counts as having reached the end.
+  // An offset past the end returns nothing and preserves an already-read state.
   const pastEnd = (await read(IP.B, shortId, '?offset=9999')).data;
   assert.equal(pastEnd.text, '');
   assert.equal(pastEnd.hasMore, false);
   assert.equal(pastEnd.markedRead, false, 'already read, so nothing to mark');
+});
+
+test('Out-of-range body reads preserve unread state; only a valid final chunk marks read', async t => {
+  const f = await fixture(t);
+  const { send, summary, read } = api(f);
+  const body = 'boundary😀';
+  const id = (await send(IP.A, { to: 'B', text: body })).data.id;
+  await send(IP.A, { to: 'B', text: 'another unread' });
+  await send(IP.C, { to: 'B', text: 'third unread' });
+  const before = (await summary(IP.B)).data;
+  assert.equal(before.total, 3);
+
+  for (const offset of [body.length, body.length + 100]) {
+    const response = await read(IP.B, id, `?offset=${offset}&limit=100`);
+    assert.equal(response.status, 200, 'empty response remains API-compatible');
+    assert.equal(response.data.text, '');
+    assert.equal(response.data.hasMore, false);
+    assert.equal(response.data.read, false);
+    assert.equal(response.data.markedRead, false);
+    assert.equal(f.app.db.prepare('SELECT read_at FROM messages WHERE id=?').get(id).read_at, null);
+  }
+  assert.equal((await read(IP.C, id, `?offset=${body.length}`)).status, 403);
+  assert.equal((await read(IP.A, id, '?offset=0')).status, 403);
+  assert.equal((await read(IP.B, id, '?offset=-1')).status, 400);
+  assert.equal((await read(IP.B, id, '?offset=0&limit=0')).status, 400);
+  const unchanged = (await summary(IP.B)).data;
+  assert.equal(unchanged.total, 3);
+  assert.deepEqual(unchanged.senders, before.senders);
+
+  // Visiting prior pages is not required: this is end-chunk semantics, not an audit.
+  const last = (await read(IP.B, id, `?offset=${body.length - 2}&limit=2`)).data;
+  assert.equal(last.text, '😀');
+  assert.equal(last.hasMore, false);
+  assert.equal(last.read, true);
+  assert.equal(last.markedRead, true);
+  const after = (await summary(IP.B)).data;
+  assert.equal(after.total, 2, '3 -> 2 immediately in the summary');
+  assert.equal(after.senders.find(s => s.name === 'A').count, 1);
+  assert.equal(after.senders.find(s => s.name === 'C').count, 1);
+  const readAt = f.app.db.prepare('SELECT read_at FROM messages WHERE id=?').get(id).read_at;
+  assert.ok(readAt);
+  for (const offset of [body.length - 2, body.length, body.length + 100]) {
+    const again = (await read(IP.B, id, `?offset=${offset}&limit=2`)).data;
+    assert.equal(again.read, true);
+    assert.equal(again.markedRead, false);
+    assert.equal(f.app.db.prepare('SELECT read_at FROM messages WHERE id=?').get(id).read_at, readAt);
+  }
+  assert.equal((await summary(IP.B)).data.total, 2);
+});
+
+test('Empty file-only body marks read only at offset zero', async t => {
+  const f = await fixture(t);
+  const { send, summary, read } = api(f);
+  const id = (await send(IP.A, { to: 'B', attachment: attachmentPayload('empty-body.txt', 'fixture') })).data.id;
+  for (const offset of [1, 9999]) {
+    const response = await read(IP.B, id, `?offset=${offset}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.data.totalLength, 0);
+    assert.equal(response.data.text, '');
+    assert.equal(response.data.hasMore, false);
+    assert.equal(response.data.read, false);
+    assert.equal(response.data.markedRead, false);
+  }
+  assert.equal((await read(IP.C, id, '?offset=0')).status, 403);
+  const before = (await summary(IP.B)).data;
+  assert.equal(before.total, 1);
+  assert.equal(before.attachments, 1);
+  assert.equal(before.senders[0].attachments, 1);
+  assert.equal(f.app.db.prepare('SELECT read_at FROM messages WHERE id=?').get(id).read_at, null);
+  const valid = (await read(IP.B, id, '?offset=0')).data;
+  assert.equal(valid.text, '');
+  assert.equal(valid.hasMore, false);
+  assert.equal(valid.read, true);
+  assert.equal(valid.markedRead, true);
+  for (const offset of [0, 1]) {
+    const again = (await read(IP.B, id, `?offset=${offset}`)).data;
+    assert.equal(again.read, true);
+    assert.equal(again.markedRead, false);
+  }
+  const after = (await summary(IP.B)).data;
+  assert.equal(after.total, 0);
+  assert.equal(after.attachments, 0);
+  assert.deepEqual(after.senders, []);
 });
 
 test('File-only and explicitly marked messages behave under the new read semantics', async t => {

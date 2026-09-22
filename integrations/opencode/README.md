@@ -40,7 +40,7 @@
 
    路径相对于该 `tui.json` 所在目录。先备份已有文件；将已有 team-mailbox 项改成上述 tuple，缺少才新增，保留其他插件和配置，不追加重复项。
 
-3. 将 `serverUrl` 替换为管理员提供的共享中心 HTTP(S) 地址，不是本机 localhost（除非自己就是中心），也不是 Node 或 bridge 路径。无需永久环境变量。完全退出并重启 OpenCode，进入会话并展开侧栏；中心可达且有未读时至多约 30 秒显示，`total: 0` 不显示。可用 `get_unread_summary` 核对条数，用同一中心地址运行 `npm run doctor` 检查连通性和身份。
+3. 将 `serverUrl` 替换为管理员提供的共享中心 HTTP(S) 地址，不是本机 localhost（除非自己就是中心），也不是 Node 或 bridge 路径。无需永久环境变量。完全退出并重启 OpenCode，进入会话并展开侧栏；挂载立即拉取，正常变化约 0–30 秒加网络耗时体现，非硬实时。成功返回 `total: 0` 时隐藏，连接异常显示提示。可用 `get_unread_summary` 核对条数，用同一中心地址运行 `npm run doctor` 检查连通性和身份。
 
 MCP 可独立收发，插件失败不会丢消息；但缺装或加载失败须报告阻塞与排障步骤，不能仅凭 MCP 连通报告 OpenCode 标准安装完成。
 
@@ -50,10 +50,14 @@ MCP 可独立收发，插件失败不会丢消息；但缺装或加载失败须�
 2. 对 `team-mailbox-unread.tsx` 和 `unread-core.mjs` 各自记录源文件及安装副本 SHA-256 并比较（PowerShell 可用 `Get-FileHash -Algorithm SHA256 -LiteralPath '<文件路径>'`），确认安装副本同目录；Skill 和 command 在同作用域安装/更新。
 3. 备份并核对 `tui.json` 恰有一个 team-mailbox tuple，显式配置管理员中心 `serverUrl` 和 `pollMs: 30000`。已有条目更新、缺少才补齐，保留其他插件/设置。无需永久环境变量或绝对下载目录配置。
 4. 完全退出重启 OpenCode，确认十个 MCP 工具、doctor 身份正确，以及 `/team-mailbox-read` 可用，不打开真实消息。
-5. 进入会话并展开侧栏；中心可达、`get_unread_summary` 返回 `total > 0` 时约 30 秒后核对区块与条数。`total: 0` 隐藏正常，不代表已证明加载成功，正数 UI 验收应记录待完成。
+5. 进入会话并展开侧栏；中心可达、`get_unread_summary` 返回 `total > 0` 时，等待本次拉取或下一轮更新后核对区块与条数（通常 0–30 秒加网络耗时，非硬实时）。成功零未读隐藏正常，不代表已证明加载成功；异常旧数据不能用于当前数量验收。
 6. 每项报告通过、阻塞或未验收及证据。无法观察 UI 时明确记录未验收、标准安装/更新未完成。不能自动发测试消息、读真实正文或标读来验证；缺装/加载失败必须排障，不能降为跳过项。
 
 ## 原生选择、默认收件与完整阅读
+
+“查看消息”“读消息”“查看某人的消息”和阅读工单消息属于 read，不因 TEST 关键词转入 dispatch。多条浏览必须先原生 question，禁止 assistant 用 Markdown 候选列表或表格替代；不可用时先说明并征求替代，不静默降级。明确 ID 且明确直接阅读时免选，先用 getmsg 查附件元数据、先保存后读正文。Skill/command 与工具描述是 Agent 指引，不是 runtime 强制；不能保证宿主隐藏工具原始 JSON。
+
+本版中心已读修复：非空正文 offset>=totalLength 仍返回 200 空 text，但不标读；空正文只有 offset=0 标读。正常有效末页仍标读，hasMore=false 本身不足以证明有效末页。中心须管理员另行更新服务并重启，无数据库迁移；业务 IP 配置与本版公开发布无关。
 
 安装文件映射（全局配置根为 `~/.config/opencode/`，项目级为 `<项目目录>/.opencode/`）：
 
@@ -107,7 +111,7 @@ Skill 属于 Agent 编排指令，不是运行时强制 UI；question 不可用�
 - [路径与 options](https://github.com/anomalyco/opencode/blob/014614d35b397775e5d397a490fc72368c894ec2/packages/opencode/src/config/plugin.ts)：`resolvePluginSpec` 保留 tuple 第二项，`pluginOptions` 返回它。
 - [TUI runtime](https://github.com/anomalyco/opencode/blob/014614d35b397775e5d397a490fc72368c894ec2/packages/opencode/src/plugin/tui/runtime.ts)：执行 `plugin.plugin(api, plugin.load.options, plugin.meta)`。本插件保留 `default { id, tui }` 导出。
 
-验证边界：此前配置修复曾由用户在 OpenCode **1.18.31** 确认显示，不代表本次视觉更新已获人工验收。本轮核心测试 59/59、插件纯逻辑 19/19；Skill 静态流程检查与 TSX 解析不等于真实 UI 验收。深浅主题、中文与窄栏仍需人工确认，不保证未来版本。
+验证边界：此前配置修复曾由用户在 OpenCode **1.18.31** 确认显示，不代表本次视觉更新已获人工验收。插件现有 30 项逻辑/生命周期测试，包含晚到 resolve/reject 竞态修复，仅当前 generation/controller 可释放 running 锁。不依赖全局 TypeScript，不可靠的 TSX 子进程测试已删除。核心、插件逻辑和 Skill 静态测试不证明 TSX 语法或真实 UI。本轮 TSX 及深浅主题、中文与窄栏仍未验证，不保证未来版本。
 
 ## 行为说明
 
@@ -116,8 +120,9 @@ Skill 属于 Agent 编排指令，不是运行时强制 UI；question 不可用�
 - 无闪烁、声音、toast、自动弹选择框或点击自动收件；阅读由用户主动运行命令触发。
 - 发件人顺序由服务端按最新未读时间倒序给出，插件原样渲染，不重新排序。
 - 最多渲染 10 行发件人；超出部分直接不显示，**不显示「还有 N 个」之类的截断提示**。
-- 每次请求 5 秒超时。请求失败、超时、HTTP 非 2xx、JSON 解析失败、字段缺失或类型不符，一律静默跳过本轮并保留上一次成功结果；连续失败不会抛异常、不会阻塞 OpenCode。
-- 轮询定时器在侧栏卸载和插件销毁时清理。
+- 首次挂载立即拉取，之后默认每 30 秒轮询；正常变化通常在 0–30 秒加网络耗时后体现，不是硬实时上限。
+- 每次请求 5 秒超时。请求失败、超时、HTTP 非 2xx、JSON 解析失败或结构异常时保留上一次成功结果，标题区域显示 `[连接异常 · 旧数据]`；从未成功时显示 `[连接异常]`。恢复成功后去提示，正常零未读隐藏；旧数据为零而连接异常时仍显示提示。
+- 最后一个侧栏视图卸载或插件销毁时停止轮询并 abort 在途请求，通过 generation 丢弃晚到结果；重新挂载立即拉取。
 
 ## 稳定性声明
 
@@ -134,4 +139,4 @@ node --test
 
 覆盖：正常多发件人、无未读、超过 10 个发件人、附件为 0、字段缺失与类型错误、轮询间隔下限与回落、各类请求失败后的降级与保留旧值。
 
-自测只覆盖 `unread-core.mjs` 的纯逻辑。**实际的 slot 渲染和 OpenCode 加载需要在装有 OpenCode TUI 的机器上人工验证。**
+自测包含 30 项 `unread-core.mjs` 纯逻辑及合成生命周期测试，仅使用 Node 内建测试工具，不包含 TSX 语法检查。**实际的 slot 渲染和 OpenCode 加载需要在装有 OpenCode TUI 的机器上人工验证。**

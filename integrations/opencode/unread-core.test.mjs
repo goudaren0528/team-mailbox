@@ -11,11 +11,14 @@ import assert from "node:assert/strict"
 
 import {
   DEFAULT_POLL_MS,
+  ERROR_LABEL,
   MAX_ROWS,
   MIN_POLL_MS,
+  STALE_ERROR_LABEL,
   TITLE,
   TITLE_ICON,
   buildSummaryUrl,
+  createPollerCore,
   fetchSummary,
   formatTitle,
   formatSenderLine,
@@ -36,6 +39,16 @@ const sender = (name, count, attachments, seconds) => ({
   attachments,
   latestTime: iso(seconds),
 })
+
+function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 
 test("title is fixed", () => {
   assert.equal(TITLE, "未读消息")
@@ -354,4 +367,487 @@ test("consecutive failures keep the previous good result (caller contract)", asy
     json: async () => ({ total: 0, attachments: 0, senders: [], updatedAt: iso(9) }),
   }))
   assert.deepEqual(toLines(last), [])
+})
+
+test("title format handles undefined or missing total", () => {
+  assert.equal(formatTitle(), "📬 未读消息")
+  assert.equal(formatTitle(undefined), "📬 未读消息")
+  assert.equal(formatTitle({}), "📬 未读消息")
+  assert.equal(formatTitle({ total: 5 }), "📬 未读消息 · 5")
+})
+
+test("empty states: normal total 0 renders nothing; initial failure renders short connection error; stale zero keeps count", () => {
+  // Normal 0 unread: renders nothing
+  const normalZero = parseSummary({ total: 0, attachments: 0, senders: [], updatedAt: iso(1) })
+  assert.equal(toDisplayModel(normalZero), undefined)
+
+  // Initial failure before any data: renders short connection error badge
+  const initialFail = toDisplayModel(undefined, { error: true })
+  assert.deepEqual(initialFail, {
+    title: "📬 未读消息",
+    rows: [],
+    errorText: ERROR_LABEL,
+    isStale: false,
+  })
+
+  // Stale 0 unread: keeps 0 count and marks stale
+  const staleZero = toDisplayModel(normalZero, { error: true })
+  assert.deepEqual(staleZero, {
+    title: "📬 未读消息 · 0",
+    rows: [],
+    errorText: STALE_ERROR_LABEL,
+    isStale: true,
+  })
+})
+
+test("lifecycle: poll success updates count from 3 to 2", async () => {
+  let count = 3
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({
+      total: count,
+      attachments: 0,
+      senders: count === 3 ? [sender("甲", 2, 0, 1), sender("乙", 1, 0, 2)] : [sender("甲", 2, 0, 1)],
+      updatedAt: iso(10),
+    }),
+  })
+
+  const poller = createPollerCore({ url: "http://example.invalid/api/unread-summary", fetchImpl })
+  const state1 = await poller.tick()
+  assert.equal(state1.summary.total, 3)
+  assert.equal(state1.error, false)
+  assert.equal(state1.isStale, false)
+  assert.equal(state1.displayModel.title, "📬 未读消息 · 3")
+  assert.equal(state1.displayModel.errorText, undefined)
+  assert.equal(state1.displayModel.rows.length, 2)
+
+  count = 2
+  const state2 = await poller.tick()
+  assert.equal(state2.summary.total, 2)
+  assert.equal(state2.error, false)
+  assert.equal(state2.isStale, false)
+  assert.equal(state2.displayModel.title, "📬 未读消息 · 2")
+  assert.equal(state2.displayModel.errorText, undefined)
+  assert.equal(state2.displayModel.rows.length, 1)
+})
+
+test("lifecycle: network failure preserves old count with stale indicator", async () => {
+  let shouldFail = false
+  const fetchImpl = async () => {
+    if (shouldFail) throw new Error("ECONNREFUSED")
+    return {
+      ok: true,
+      json: async () => ({
+        total: 3,
+        attachments: 1,
+        senders: [sender("甲", 3, 1, 1)],
+        updatedAt: iso(10),
+      }),
+    }
+  }
+
+  const poller = createPollerCore({ url: "http://example.invalid/api/unread-summary", fetchImpl })
+  await poller.tick()
+
+  shouldFail = true
+  const state = await poller.tick()
+  assert.equal(state.summary.total, 3)
+  assert.equal(state.error, true)
+  assert.equal(state.isStale, true)
+  assert.equal(state.displayModel.title, "📬 未读消息 · 3")
+  assert.equal(state.displayModel.errorText, STALE_ERROR_LABEL)
+  assert.equal(state.displayModel.rows.length, 1)
+  assert.equal(state.displayModel.rows[0].name, "甲")
+})
+
+test("lifecycle: recovery clears error and stale indicator", async () => {
+  let mode = "fail"
+  const fetchImpl = async () => {
+    if (mode === "fail") throw new Error("500 Internal Error")
+    return {
+      ok: true,
+      json: async () => ({
+        total: 1,
+        attachments: 0,
+        senders: [sender("乙", 1, 0, 5)],
+        updatedAt: iso(20),
+      }),
+    }
+  }
+
+  const poller = createPollerCore({
+    url: "http://example.invalid/api/unread-summary",
+    fetchImpl,
+    initialSummary: {
+      total: 3,
+      attachments: 0,
+      senders: [sender("甲", 3, 0, 1)],
+      updatedAt: iso(1),
+    },
+  })
+
+  // First tick in fail mode: retains old summary and sets stale error
+  const failedState = await poller.tick()
+  assert.equal(failedState.summary.total, 3)
+  assert.equal(failedState.error, true)
+  assert.equal(failedState.isStale, true)
+  assert.equal(failedState.displayModel.errorText, STALE_ERROR_LABEL)
+
+  // Next tick in ok mode: recovers
+  mode = "ok"
+  const recoveredState = await poller.tick()
+  assert.equal(recoveredState.summary.total, 1)
+  assert.equal(recoveredState.error, false)
+  assert.equal(recoveredState.isStale, false)
+  assert.equal(recoveredState.displayModel.title, "📬 未读消息 · 1")
+  assert.equal(recoveredState.displayModel.errorText, undefined)
+  assert.equal(recoveredState.displayModel.rows[0].name, "乙")
+})
+
+test("lifecycle: mount/unmount aborts in-flight fetch", async () => {
+  let aborted = false
+  const poller = createPollerCore({
+    url: "http://example.invalid/api/unread-summary",
+    pollMs: 10000,
+    fetchImpl: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          aborted = true
+          reject(new Error("aborted"))
+        })
+      }),
+  })
+
+  const release = poller.retain()
+  assert.equal(poller.users, 1)
+  assert.equal(poller.running, true)
+
+  // Unmount: releases listener and triggers stop()
+  release()
+  assert.equal(poller.users, 0)
+  assert.equal(aborted, true)
+  assert.equal(poller.running, false)
+})
+
+test("lifecycle: late response is rejected and cannot overwrite newer state", async () => {
+  let resolveSlow
+  const slowPromise = new Promise((resolve) => {
+    resolveSlow = resolve
+  })
+
+  let callCount = 0
+  const fetchImpl = async () => {
+    callCount++
+    if (callCount === 1) {
+      // First call is slow
+      return slowPromise
+    }
+    // Subsequent calls are fast
+    return {
+      ok: true,
+      json: async () => ({
+        total: 2,
+        attachments: 0,
+        senders: [sender("快", 2, 0, 1)],
+        updatedAt: iso(10),
+      }),
+    }
+  }
+
+  const poller = createPollerCore({ url: "http://example.invalid/api/unread-summary", fetchImpl })
+
+  // Start slow tick
+  const tick1Promise = poller.tick()
+  assert.equal(poller.running, true)
+
+  // Force a stop/new generation while slow tick is in flight
+  poller.stop()
+
+  // Fast tick with new generation
+  const tick2State = await poller.tick()
+  assert.equal(tick2State.summary.total, 2)
+  assert.equal(tick2State.displayModel.rows[0].name, "快")
+
+  // Now the slow tick resolves with stale data (total: 99)
+  resolveSlow({
+    ok: true,
+    json: async () => ({
+      total: 99,
+      attachments: 0,
+      senders: [sender("慢", 99, 0, 1)],
+      updatedAt: iso(5),
+    }),
+  })
+  await tick1Promise
+
+  // State must NOT be overwritten by the slow request
+  const currentState = poller.getState()
+  assert.equal(currentState.summary.total, 2)
+  assert.equal(currentState.displayModel.rows[0].name, "快")
+})
+
+test("lifecycle: poller prevents overlapping requests", async () => {
+  let inFlight = 0
+  let maxConcurrent = 0
+  const fetchImpl = async () => {
+    inFlight++
+    maxConcurrent = Math.max(maxConcurrent, inFlight)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    inFlight--
+    return {
+      ok: true,
+      json: async () => ({
+        total: 1,
+        attachments: 0,
+        senders: [sender("甲", 1, 0, 1)],
+        updatedAt: iso(1),
+      }),
+    }
+  }
+
+  const poller = createPollerCore({ url: "http://example.invalid/api/unread-summary", fetchImpl })
+  const p1 = poller.tick()
+  const p2 = poller.tick()
+  await Promise.all([p1, p2])
+
+  assert.equal(maxConcurrent, 1)
+  poller.stop()
+})
+
+test("lifecycle: remount immediately triggers tick", async () => {
+  let ticks = 0
+  const fetchImpl = async () => {
+    ticks++
+    return {
+      ok: true,
+      json: async () => ({
+        total: 1,
+        attachments: 0,
+        senders: [sender("甲", 1, 0, 1)],
+        updatedAt: iso(1),
+      }),
+    }
+  }
+
+  const poller = createPollerCore({ url: "http://example.invalid/api/unread-summary", pollMs: 60000, fetchImpl })
+
+  // First mount
+  const release1 = poller.retain()
+  assert.equal(ticks, 1)
+
+  // Unmount
+  release1()
+  assert.equal(poller.users, 0)
+
+  // Remount immediately ticks
+  const release2 = poller.retain()
+  assert.equal(ticks, 2)
+  release2()
+})
+
+test("lifecycle: late resolve of aborted request A cannot clear running lock while request B is in flight", async () => {
+  const defA = deferred()
+  const defB = deferred()
+  const defC = deferred()
+  let fetchCount = 0
+  const abortSignals = []
+
+  const fetchImpl = async (_url, init) => {
+    fetchCount++
+    if (init?.signal) {
+      abortSignals.push(init.signal)
+    }
+    if (fetchCount === 1) {
+      return defA.promise
+    }
+    if (fetchCount === 2) {
+      return defB.promise
+    }
+    return defC.promise
+  }
+
+  const poller = createPollerCore({
+    url: "http://example.invalid/api/unread-summary",
+    pollMs: 60000,
+    fetchImpl,
+  })
+
+  try {
+    // 1. Mount / start request A
+    const release = poller.retain()
+    assert.equal(fetchCount, 1)
+    assert.equal(poller.running, true)
+
+    // 2. Stop / unmount: aborts A and marks poller stopped
+    release()
+    assert.equal(poller.users, 0)
+    assert.equal(abortSignals[0]?.aborted, true)
+
+    // 3. Remount: starts request B, which is now pending
+    const release2 = poller.retain()
+    assert.equal(fetchCount, 2)
+    assert.equal(poller.running, true)
+
+    // 4. Request A late-resolves (simulating response arriving despite abort)
+    defA.resolve({
+      ok: true,
+      json: async () => ({
+        total: 99,
+        attachments: 0,
+        senders: [sender("A", 99, 0, 1)],
+        updatedAt: iso(1),
+      }),
+    })
+
+    // Give microtasks / event loop a chance to process A's resolution and finally block
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    // 5. Assert: request A's finally did NOT clear running, because request B owns the active generation/controller
+    assert.equal(poller.running, true)
+
+    // Extra tick attempt while B is in flight: must be ignored and NOT invoke fetchCount 3 (request C)
+    await poller.tick()
+    assert.equal(fetchCount, 2)
+    assert.equal(poller.running, true)
+
+    // 6. Request B resolves
+    defB.resolve({
+      ok: true,
+      json: async () => ({
+        total: 2,
+        attachments: 0,
+        senders: [sender("B", 2, 0, 2)],
+        updatedAt: iso(2),
+      }),
+    })
+
+    // Wait for B to complete
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(poller.running, false)
+    assert.equal(poller.getState().summary?.total, 2)
+
+    // 7. Now that B is resolved and running is false, a subsequent tick CAN trigger request C
+    const cTick = poller.tick()
+    assert.equal(fetchCount, 3)
+    assert.equal(poller.running, true)
+
+    defC.resolve({
+      ok: true,
+      json: async () => ({
+        total: 1,
+        attachments: 0,
+        senders: [sender("C", 1, 0, 3)],
+        updatedAt: iso(3),
+      }),
+    })
+    await cTick
+    assert.equal(poller.running, false)
+    assert.equal(poller.getState().summary?.total, 1)
+
+    release2()
+  } finally {
+    poller.stop()
+  }
+})
+
+test("lifecycle: late reject of aborted request A cannot clear running lock while request B is in flight", async () => {
+  const defA = deferred()
+  const defB = deferred()
+  const defC = deferred()
+  let fetchCount = 0
+  const abortSignals = []
+  let abortListenerCalled = false
+
+  const fetchImpl = async (_url, init) => {
+    fetchCount++
+    if (init?.signal) {
+      abortSignals.push(init.signal)
+      init.signal.addEventListener("abort", () => {
+        abortListenerCalled = true
+      })
+    }
+    if (fetchCount === 1) {
+      return defA.promise
+    }
+    if (fetchCount === 2) {
+      return defB.promise
+    }
+    return defC.promise
+  }
+
+  const poller = createPollerCore({
+    url: "http://example.invalid/api/unread-summary",
+    pollMs: 60000,
+    fetchImpl,
+  })
+
+  try {
+    // 1. Mount / start request A
+    const release = poller.retain()
+    assert.equal(fetchCount, 1)
+    assert.equal(poller.running, true)
+
+    // 2. Stop / unmount: aborts A's controller. A's fetch ignores immediate abort and stays pending.
+    release()
+    assert.equal(poller.users, 0)
+    assert.equal(abortSignals[0]?.aborted, true)
+    assert.equal(abortListenerCalled, true)
+
+    // 3. Remount: starts request B, which is now pending
+    const release2 = poller.retain()
+    assert.equal(fetchCount, 2)
+    assert.equal(poller.running, true)
+
+    // 4. Request A late-rejects with network/abort error. Handled cleanly without unhandled rejection.
+    defA.reject(new Error("simulated late network abort error"))
+
+    // Allow microtasks / event loop to process A's rejection and finally block
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    // 5. Assert: request A's rejection did NOT clear running and did NOT pollute request B's state
+    assert.equal(poller.running, true)
+    assert.equal(poller.getState().error, false)
+
+    // Extra tick attempt while B is in flight: ignored, request C is not started
+    await poller.tick()
+    assert.equal(fetchCount, 2)
+    assert.equal(poller.running, true)
+
+    // 6. Request B resolves
+    defB.resolve({
+      ok: true,
+      json: async () => ({
+        total: 5,
+        attachments: 0,
+        senders: [sender("B", 5, 0, 2)],
+        updatedAt: iso(2),
+      }),
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(poller.running, false)
+    assert.equal(poller.getState().summary?.total, 5)
+
+    // 7. Request C can now start
+    const cTick = poller.tick()
+    assert.equal(fetchCount, 3)
+    assert.equal(poller.running, true)
+
+    defC.resolve({
+      ok: true,
+      json: async () => ({
+        total: 4,
+        attachments: 0,
+        senders: [sender("C", 4, 0, 3)],
+        updatedAt: iso(3),
+      }),
+    })
+    await cTick
+    assert.equal(poller.running, false)
+    assert.equal(poller.getState().summary?.total, 4)
+
+    release2()
+  } finally {
+    poller.stop()
+  }
 })

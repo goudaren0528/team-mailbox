@@ -82,7 +82,7 @@ URL 仅支持 HTTP(S)，拒绝 userinfo、query、hash；禁止 redirect。路�
    ```
 
    插件是 `.tsx`，必须显式列出。路径相对于该 `tui.json` 所在目录；先备份文件，将已有 team-mailbox 项改为 tuple，缺少才新增，保留其他插件，不追加重复项。`opencode.json` 的 `plugin` 键是给 server 侧插件用的，写在那里无效。
-3. 将 `serverUrl` 替换为管理员提供的共享中心 HTTP(S) 地址，不是本机 localhost（除非自己就是中心），也不是 Node 或 bridge 路径。无需永久环境变量。完全退出重启 OpenCode，进入会话并展开侧栏；中心可达且有未读时至多约 30 秒显示，`total: 0` 时不显示。用 `get_unread_summary` 核对条数、`npm run doctor` 验证连接和身份。已在 1.18.31 用户确认显示，不保证未来版本。
+3. 将 `serverUrl` 替换为管理员提供的共享中心 HTTP(S) 地址，不是本机 localhost（除非自己就是中心），也不是 Node 或 bridge 路径。无需永久环境变量。完全退出重启 OpenCode，进入会话并展开侧栏；挂载立即拉取，正常变化约 0–30 秒加网络耗时体现，非硬实时。成功零未读隐藏，连接异常显示提示。用 `get_unread_summary` 核对条数、`npm run doctor` 验证连接和身份。1.18.31 只有历史显示记录，不代表本轮 UI 已验收或保证未来版本。
 
 选项逐键优先于下列环境变量，只有缺省键才回退。显式非法选项停用插件，不会回退到其他中心。`serverUrl` 禁止凭据、query/hash，请求不跟随重定向；`pollMs` 必须为有限正数，最低 10000 毫秒，默认 30000。固定版本官方依据见 `integrations/opencode/README.md`。
 
@@ -93,7 +93,7 @@ URL 仅支持 HTTP(S)，拒绝 userinfo、query、hash；禁止 redirect。路�
 
 变量必须对**启动 OpenCode 的那个进程**可见：`MCP.environment` 只给 MCP 子进程，不会回传给 TUI。推荐上面的 tuple 配置。
 
-插件直接 HTTP 调用中心的 `GET /api/unread-summary`，每次请求 5 秒超时。请求失败、超时、非 2xx、JSON 解析失败、字段缺失或类型不符时**静默跳过本轮并保留上一次成功结果**，不抛异常、不阻塞 OpenCode，也不在界面上标注结果已陈旧。
+插件直接 HTTP 调用中心的 `GET /api/unread-summary`，每次请求 5 秒超时。首次挂载立即拉取，之后默认每 30 秒轮询；正常变化通常在 0–30 秒加网络耗时后体现，不是硬实时保证。最后一个视图卸载会停止轮询并 abort 在途请求，generation 校验丢弃晚到结果，重新挂载立即拉取。请求失败、超时、非 2xx 或无效响应时保留旧数据，标题区域显示 `[连接异常 · 旧数据]`；从未成功则显示 `[连接异常]`。恢复成功后去除提示，正常零未读隐藏；旧数据为零而连接异常时仍显示旧数据提示。
 
 **稳定性声明：** 侧栏的 `sidebar_content` slot 是 **OpenCode 源码级接口，官方插件文档未记载，属于非承诺稳定接口**，升级后可能变更或消失。失效时的表现只是**侧栏不显示未读区块**；slot 注册包在 try/catch 中，注册失败仅打印日志，不影响 OpenCode 启动，也不影响消息收发和全部 MCP 工具。
 
@@ -105,7 +105,11 @@ URL 仅支持 HTTP(S)，拒绝 userinfo、query、hash；禁止 redirect。路�
 
 默认无需用户指定目录或增加环境变量。bridge 按自身模块 import.meta.url 定位 src/ 上一级真实包根，在首次自动保存时创建 downloads/；启动/列表不创建，不使用 Agent cwd 或中心目录。已有 downloads 若为文件或 symlink/junction 则拒绝，不写出包根。若曾设置 MSG_DOWNLOAD_DIR，高级覆盖仍生效；要恢复默认，备份配置并获准后仅移除本 MCP entry 的该项，保留其他 env 与 tui tuple。旧下载目录/文件不删除，不复制中心 downloads。
 
-已有用户更新：git pull --ff-only 后重新复制两个插件文件、Skill 文件夹和 command 文件，更新上述 bridge environment，再完全退出重启；有本地冲突不强制覆盖。依赖未变不需重跑 npm ci，初装仍需要。侧栏标题/条数 accent 加粗、发件人 text、附件 warning，文字 fallback；保持 30 秒、原倒序、10 发件人及零隐藏，无闪烁或点击自动收件。
+已有用户更新：git pull --ff-only 后重新复制两个插件文件、Skill 文件夹和 command 文件，再完全退出重启；有本地冲突不强制覆盖。已有正确地址配置无需因此修改，本次公开版本不包含业务 IP 映射变更。运行依赖未变，已有用户不需重跑 npm ci，初装仍需要。侧栏保持原倒序、10 发件人及正常零隐藏，无闪烁或点击自动收件。中心的越界已读修复须管理员另行部署更新后的服务并重启；无数据库迁移。
+
+“查看消息”“读消息”“查看某人的消息”及阅读工单消息走 read，不因 TEST 关键词走 dispatch。多条浏览必须先原生 question，不以 assistant Markdown 候选列表或表格替代；question 不可用时先说明并征求替代，不静默降级。明确 ID 的直接阅读免去选择，但先查元数据、先保存附件再读正文。Skill 是 Agent 指引而非 runtime 强制，不能保证宿主隐藏列表工具原始 JSON。
+
+正文已读新边界：非空正文 `offset >= totalLength` 仍返回 200 空 text，但不标读；空正文仅 `offset=0` 触发标读。正常有效末页仍标读，详见[工具规则](tools.md#自动已读规则)。
 
 选中后有附件先保存和校验，再分页呈现完整正文；失败询问重试、明确跳过或取消，正文重试不重复下载。取消/翻页仅列消息，不标读；正文读到末尾由中心自动已读，不证明用户看完每个字，也不能回滚其他会话已读。Skill 是编排指令，不是强制 UI 保证；静态检查不等于真实视觉验收。
 

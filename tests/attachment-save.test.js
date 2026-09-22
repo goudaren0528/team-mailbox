@@ -202,3 +202,55 @@ test('OpenCode skill/command installation contract and workflow guardrails (stat
     assert.ok(skill.includes(term), term);
   }
 });
+
+test('OpenCode reading guidance preserves routing, selection boundaries and honest UI limits (static, not UI)', () => {
+  const skill = fs.readFileSync('integrations/opencode/skills/team-mailbox-read/SKILL.md', 'utf8');
+  const command = fs.readFileSync('integrations/opencode/commands/team-mailbox-read.md', 'utf8');
+  const mcp = fs.readFileSync('src/mcp.js', 'utf8');
+  const normalized = text => text.replace(/\s+/g, ' ');
+  for (const [name, text] of Object.entries({ skill, command, mcp })) {
+    for (const phrase of ['查看消息', '读消息', '查看某人的消息', 'native question',
+      'direct-read intent', 'no redundant selection', 'not runtime enforcement']) {
+      assert.ok(normalized(text).includes(phrase), `${name}: ${phrase}`);
+    }
+    assert.match(text, /TEST.*keywords/, `${name}: TEST alone must not route reading to dispatch`);
+  }
+  const flow = normalized(skill);
+  assert.match(flow, /Browsing multiple messages must use native question before reading or receiving/);
+  assert.match(flow, /Do not print candidate messages as an assistant Markdown list or table/);
+  assert.match(flow, /unavailable\/disabled when selection is needed, explain the limitation and ask which alternative/);
+  assert.match(flow, /Never silently switch to a Markdown message list/);
+  assert.match(flow, /Raw getmsg JSON may still be visible/);
+  assert.match(flow, /cannot hide it or guarantee collapsed-tool privacy/);
+  assert.match(flow, /use getmsg metadata to resolve that exact ID and its attachment.id without reading the body/);
+  assert.match(flow, /Do not substitute another message/);
+  assert.match(flow, /Never use read_message just to discover attachments/);
+  assert.match(flow, /Navigation only calls getmsg/);
+  assert.match(flow, /Do not infer IDs from numbers, custom prose, partial titles or unknown answers/);
+  assert.match(flow, /Cancel or RejectedError ends cleanly: no read_message, receive_attachment, save_attachment or mark_read/);
+  assert.match(flow, /before any read_message call/);
+  const entry = normalized(command);
+  assert.match(entry, /Browsing multiple messages requires native question, not an assistant Markdown candidate list or table/);
+  assert.match(entry, /If question is unavailable, explain the limitation and ask which alternative/);
+  assert.match(entry, /never silently downgrade/);
+  assert.match(entry, /Raw tool JSON may remain visible.*do not promise to hide it/);
+  const guidance = mcp.match(/const READING_GUIDANCE = '([^']+)';/);
+  assert.ok(guidance, 'shared reading description exists');
+  for (const phrase of ['load team-mailbox-read by name', 'TEST keywords alone do not route reading to dispatch',
+    'Browsing multiple messages requires native question before reading or receiving',
+    'do not print candidate messages as an assistant Markdown list or table',
+    'If question is unavailable, explain the limitation and ask which alternative', 'never silently downgrade',
+    'resolve exact-ID attachment metadata via getmsg, then save attachments before reading the body',
+    'Navigation/cancel must not read bodies, download attachments or mark read',
+    'ambiguous custom answers must not be guessed as IDs', 'Raw tool JSON may remain visible']) {
+    assert.ok(guidance[1].includes(phrase), phrase);
+  }
+  for (const name of ['getmsg', 'get_unread_summary', 'read_message', 'receive_attachment', 'save_attachment', 'read_attachment_text']) {
+    const registration = mcp.split(`'${name}',`)[1]?.split('mcpServer.tool(')[0];
+    assert.ok(registration?.includes('${READING_GUIDANCE}'), `${name}: shared description required`);
+  }
+  const receive = mcp.split("'receive_attachment',")[1];
+  const schema = receive.match(/\n    \{([\s\S]*?)\n    \},/);
+  assert.ok(schema, 'receive_attachment schema exists');
+  assert.deepEqual([...schema[1].matchAll(/^\s+(\w+):/gm)].map(match => match[1]), ['attachment_id']);
+});
