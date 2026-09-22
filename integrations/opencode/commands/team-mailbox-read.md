@@ -5,6 +5,16 @@ description: 查看消息、读消息、查看某人的消息或阅读工单消�
 Load the `team-mailbox-read` skill through the skill tool, then follow it for this
 explicit message-reading request. User filters or intent: $ARGUMENTS
 
+Single unread shortcut: only unread_only=true, a fresh first page (cursor omitted
+or cursor=0), messages.length=1 and hasMore=false proves the complete matching set
+is one. Unless the user explicitly requests selection, this viewing request is
+enough: receive_attachment with only attachment_id successfully before the complete
+body, without repeated confirmation. No shortcut in all mode, unknown completeness,
+later pages or read-only/local filtering of an earlier multi-message list. After
+cancel, query again for a new request; never reuse cached uniqueness. Zero matches
+means no reading/download; offer all messages. Attachment failure still asks retry,
+explicit skip or cancel. These are Agent instructions, not runtime enforcement.
+
 If the skill is missing, explain that its folder must be installed in the same
 OpenCode scope's skills/ directory and stop. Do not improvise a Markdown inbox list.
 Reading TEST/BUGFIX/TEST_FIX/RESULT work-order messages belongs to team-mailbox-read;

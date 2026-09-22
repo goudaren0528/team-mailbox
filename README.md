@@ -112,6 +112,8 @@ The earlier configuration fix was user-confirmed on **OpenCode 1.18.31**, not th
 
 `/team-mailbox-read` asks the Agent to use native question, with up to 10 messages plus navigation/cancel and full real IDs. Default to unread, allow all, and respect filters. Lists remain ascending by ID, not globally newest-first. Cancel/navigation does not read bodies, download or mark read. Unknown custom answers are not guessed as IDs.
 
+**Single unread shortcut:** only when the filtered scope genuinely holds exactly one message — `unread_only=true`, a fresh first page with cursor omitted or `cursor=0`, `messages.length=1` and `hasMore=false` — the user's current viewing request authorizes receiving that attachment (`receive_attachment` with only `attachment_id`, after a successful verified save) and then showing the complete body, without repeated confirmation. Multiple matches, all mode, later pages, locally filtered subsets or uncertain completeness still require native question; zero matches reads and downloads nothing; after cancel a new request queries again instead of reusing cached uniqueness. An attachment save failure still asks retry / explicit skip / cancel, and never silently continues reading. This remains Agent guidance, not runtime enforcement.
+
 After selection, save and verify the attachment first, then show the complete paginated body. Save failures offer retry, explicit skip or cancel; body retries reuse the saved attachment. Long text may use multiple outputs, never silent summarization/truncation. Skill instructions are Agent orchestration, not enforced UI; without question, explain and confirm a fallback. See the [integration guide](integrations/opencode/README.md).
 
 ## Quick start: prefer a direct Node deployment

@@ -114,6 +114,8 @@ team-mailbox 仍是通用文本、调查资料与文件信箱。发送方 Agent 
 
 选中后有附件先保存并校验，再分页呈现完整正文。保存失败提供重试、明确跳过或取消；正文重试复用已保存附件，不重复下载。长文本可分次呈现，不静默总结/截断。Skill 是 Agent 编排而非强制 UI；无 question 时说明并确认降级。见[集成说明](integrations/opencode/README.md)。
 
+**单条未读免选择：** 仅当筛选范围内确实只有一条（`unread_only=true`、本轮第一页且 `cursor=0`、`messages.length=1`、`hasMore=false`）时，用户本次查看意图即授权直接先收附件、再读完整正文，不再弹选择；多条、全部模式、后续页或完整性不确定仍使用原生 question。取消后重新请求需重新查询。附件保存失败仍须重试／跳过／取消。
+
 ## 快速开始：优先直接 Node 部署
 
 使用 **Node.js 24** 和完整源码（含 lockfile）。以下是 Windows PowerShell 示例，逐条确认成功后继续；路径按实际位置调整。
