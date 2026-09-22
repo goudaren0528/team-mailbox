@@ -57,6 +57,8 @@ MCP 可独立收发，插件失败不会丢消息；但缺装或加载失败须�
 
 “查看消息”“读消息”“查看某人的消息”和阅读工单消息属于 read，不因 TEST 关键词转入 dispatch。多条浏览必须先原生 question，禁止 assistant 用 Markdown 候选列表或表格替代；不可用时先说明并征求替代，不静默降级。明确 ID 且明确直接阅读时免选，先用 getmsg 查附件元数据、先保存后读正文。Skill/command 与工具描述是 Agent 指引，不是 runtime 强制；不能保证宿主隐藏工具原始 JSON。
 
+**单条未读免选择：** 仅当筛选范围内确实只有一条（`unread_only=true`、本轮第一页且未传 cursor 或 `cursor=0`、`messages.length=1`、`hasMore=false`）时，用户本次查看意图即授权直接先收附件（`receive_attachment` 仅传 `attachment_id`，保存校验成功后）再呈现完整正文，不反复确认。多条、全部模式、后续页、局部过滤或完整性不确定仍走原生 question；0 条不读取不下载；取消后重新请求需重新查询，不复用旧判断。附件失败仍须重试／明确跳过／取消，不静默继续读正文。
+
 本版中心已读修复：非空正文 offset>=totalLength 仍返回 200 空 text，但不标读；空正文只有 offset=0 标读。正常有效末页仍标读，hasMore=false 本身不足以证明有效末页。中心须管理员另行更新服务并重启，无数据库迁移；业务 IP 配置与本版公开发布无关。
 
 安装文件映射（全局配置根为 `~/.config/opencode/`，项目级为 `<项目目录>/.opencode/`）：
@@ -67,6 +69,8 @@ MCP 可独立收发，插件失败不会丢消息；但缺装或加载失败须�
 | `commands/team-mailbox-read.md` | `command/team-mailbox-read.md`（单数 command） |
 
 命令 `/team-mailbox-read` 按名称加载 Skill。由 Agent 调用原生 question，每页最多 10 条消息及导航/取消，保留真实 id，不用 Markdown 消息列表。默认未读、可切全部，尊重过滤；getmsg 按 id 升序，不是全局最新倒序。取消/翻页不读正文、不下载、不标读。未知自定义答案不猜 id。
+
+**单条未读免选择：** 仅当筛选范围内确实只有一条（`unread_only=true`、本轮第一页且未传 cursor 或 `cursor=0`、`messages.length=1`、`hasMore=false`）时，用户本次查看意图即授权直接先收附件（`receive_attachment` 仅传 `attachment_id`，保存校验成功后）再呈现完整正文，不反复确认。多条、全部模式、后续页、局部过滤或完整性不确定仍走原生 question；0 条不读取不下载；取消后重新请求需重新查询。附件保存失败仍须重试／明确跳过／取消，不静默继续读正文。这是 Agent 指引，不是运行时强制。
 
 无需询问收件目录或配置 MSG_DOWNLOAD_DIR：每个用户运行的 bridge 根据自身 import.meta.url 定位包根，在首次保存时创建独立 downloads/，不受 Agent cwd 影响。启动/列消息不创建；文件占位、symlink/junction 或无权限明确失败。不要复制中心 downloads/。MCP 环境仅需管理员提供的共享地址，示意如下：
 
