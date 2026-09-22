@@ -1,0 +1,15 @@
+{
+  "to": "alice", "title": "[RESULT:v1][QA][A-1042][r1] PASS", "project": "project-a",
+  "text": {
+    "ticket_id": "A-1042", "revision": 1, "original_message_id": "<actual-positive-message-id-number>",
+    "report_id": "<actual-report-reference>", "executing_agent": "<actual-executing-agent>",
+    "code": {"base_commit": "<actual-tested-full-base-or-explain-absence>", "head_commit": "<actual-tested-full-head>", "dirty_scope": "<actual-tested-scope>"},
+    "delivery": {"location": "<actual-delivery-reference-or-explained-not-applicable>", "modification_state": "<actual-committed-uncommitted-or-no-change>", "related_files": []},
+    "tests": {"conclusion": "PASS", "coverage": [{"ac_id": "AC-1", "actual": "<observed-pass>", "evidence_refs": ["<actual-evidence-reference>"]}]},
+    "computer_use": {"used": "<replace-with-actual-boolean>", "details": "<actual-use-or-reason-not-used>"},
+    "fallback": {"used": "<replace-with-actual-boolean>", "details": "<actual-use-and-authority-or-not-used>"},
+    "failed": [], "blocked": [], "not_run": [],
+    "evidence": [{"ref": "<actual-accessible-link-or-attachment-reference>", "revision": "<actual-tested-revision>"}],
+    "next_actions": ["<actual-next-action-or-none>"], "references": {"message_ids": []}
+  }
+}

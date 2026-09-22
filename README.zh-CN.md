@@ -80,9 +80,23 @@ MCP 可以独立收发，插件失败不会丢失消息；但缺装或加载失�
 - 进入会话、展开侧栏。中心可达且 `get_unread_summary` 返回 `total > 0` 时，约 30 秒后核对区块与条数。`total: 0` 隐藏是正常行为，但不能证明加载成功，正数 UI 验收应记录待完成；不要造消息或读正文、标读来测试。
 - 每项报告通过、阻塞或未验收及证据。无法检查界面时明确 UI 未验收，不得报告标准安装/更新完整完成；缺装或加载失败必须报告阻塞，即使 MCP 正常。
 
+## 开发测试与验收
+
+team-mailbox 仍是通用文本、调查资料与文件信箱。发送方 Agent 仅在用户明确要求派发 TEST、BUGFIX、TEST_FIX 或回报结果时使用此场景，不因关键词命中就转换消息。普通消息继续自由发送；MCP 后端不自动识别或强制校验协议，收到消息也不会自动执行。
+
+使用 `/team-mailbox-dispatch`，或说：“为 project-a 整理一份发给 bob 的 QA TEST 任务，先给我预览。”角色（QA/FIX）表示目标职责，mode（TEST/BUGFIX/TEST_FIX）表示工作类型；QA 只允许 TEST，FIX 允许三种。缺必需信息先问，预览后经明确授权才发送；没有持久去重或 exactly-once 保证。
+
+见[场景说明与模板](docs/work-orders.md)。将 `integrations/opencode/skills/team-mailbox-dispatch/` **整个目录（包含 references/ 下五个 JSON 模板）**复制到同作用域 `skills/`，将 `integrations/opencode/commands/team-mailbox-dispatch.md` 复制到 `command/`。模板中的 `code.head_commit` 等是不可发送的占位值，须替换并核验目标仓库真实对象，不能当作真实 SHA 证据。安装后完全退出并重启 OpenCode；自然语言选 Skill 只是引导，不是强制能力。
+
+### 开发场景初装补充提示词
+
+> 在阅读集成之外安装开发测试场景入口：按上文复制完整 team-mailbox-dispatch Skill 目录及 references/ 和 command。保留其他安装文件，同名自定义内容先检查、备份再更新。核对所有安装文件哈希，重启后检查命令可用，不发送工单或读取真实消息作测试。安装入口不代表普通消息必须套 WORK，不需要重启中心。
+
 ## 更新提示词（已安装的 OpenCode 用户）
 
 转发前将 `<仓库路径>` 换成自己的 checkout，将 `http://<central-host>:8787` 换成管理员提供的共享中心地址：
+
+> 同时从更新后的 checkout 安装/更新开发场景的完整 skills/team-mailbox-dispatch/ 目录（含五个 references/ 模板）和 command/team-mailbox-dispatch.md。保留其他集成，备份同名自定义内容；核对安装哈希，再提醒我完全退出重启 OpenCode、检查按名称加载 Skill，不发送测试工单。普通消息不变，仅明确派发/回报意图才用模板，预览并取得发送授权。
 
 > OpenCode 必须完整安装 MCP bridge、两个侧栏文件、显式 tui.json options、阅读 Skill/command。核对版本兼容性与文件 SHA-256，逐项报告上方验收清单。此前跳过的插件或 tuple 必须补齐；已有条目更新，不重复添加。缺装/加载失败是阻塞，UI 未验收必须记录未完成，不能仅凭 MCP 连通完成更新。
 

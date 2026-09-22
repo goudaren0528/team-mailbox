@@ -1,0 +1,35 @@
+{
+  "to": "bob",
+  "title": "[WORK:v1][FIX][BUGFIX][A1043] <replace-summary>",
+  "project": "project-a",
+  "text": {
+    "schema": "on-duty.work.v1", "ticket_id": "A1043", "revision": 1,
+    "project": "project-a", "target": "FIX", "mode": "BUGFIX",
+    "summary": "<actual-bug-summary>",
+    "code": {
+      "head_commit": "<actual-full-head-commit-not-a-branch>",
+      "base_omission_reason": "<actual-reason-no-baseline-or-replace-with-verified-base_commit-for-change-testing>",
+      "related_files": [], "dirty_scope": "<actual-clean-status-or-agreed-committed-only-scope>"
+    },
+    "bug": {
+      "actual": "<observed-behavior>", "expected": "<expected-behavior>",
+      "reproduction_steps": ["<actual-step-or-use-unstable_reproduction_reason-if-not-stable>"]
+    },
+    "requirements": {
+      "expected": "<actual-expected-behavior>",
+      "acceptance": [{"id": "AC-1", "statement": "<decidable-regression-criterion>"}],
+      "documents": [], "must_verify": ["<actual-required-check>"]
+    },
+    "environment": {
+      "target": "<approved-test-target>", "roles": ["<approved-role>"],
+      "profile": "<approved-logical-profile>", "account_ref": "<approved-credential-reference-only>",
+      "data_refs": ["<approved-data-reference-or-explicit-none>"], "cleanup": "<approved-cleanup-policy>"
+    },
+    "constraints": {
+      "scope": "<actual-fix-scope>", "out_of_scope": ["<actual-exclusion>"],
+      "fallback": "<approved-fallback-policy>", "high_risk": ["<actual-restriction>"],
+      "allow_commit": false, "allow_push": false
+    },
+    "references": {"message_ids": []}
+  }
+}

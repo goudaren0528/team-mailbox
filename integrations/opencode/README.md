@@ -82,6 +82,11 @@ Skill 属于 Agent 编排指令，不是运行时强制 UI；question 不可用�
 
 在自己的仓库 git pull --ff-only，有冲突不强制覆盖；更新两个插件文件、Skill 与 command。无需新建目录配置；如存在旧 MSG_DOWNLOAD_DIR，展示移除该项的改动并获准，保留其他 env、tui tuple 和旧下载文件，完全退出重启。单独 pull 不更新插件安装副本。依赖未变，已有用户不需 npm ci，初装仍需。见[主 README 提示词](../../README.zh-CN.md)。
 
+## 开发测试与验收场景安装
+
+完整复制 `skills/team-mailbox-dispatch/` 到同作用域配置根 `skills/`，包括 references/ 下五个 JSON 模板；将 `commands/team-mailbox-dispatch.md` 放到 `command/`。更新前检查并备份同名自定义内容，保留其他插件/Skill/command，核对所有安装文件 SHA-256，再完全退出重启 OpenCode；不需要重启中心。
+`/team-mailbox-dispatch` 按名称加载该 Skill，缺失应停止；自然语言选 Skill 只是引导。只有明确开发测试派发/回报意图才套模板，普通聊天/文件/调查资料不变。先预览并取得明确发送授权，缺必需信息先问；不自动接单执行、不提供服务端校验或持久去重。见[场景与模板](../../docs/work-orders.md)。
+
 ## 配置优先级与环境变量回退
 
 `tui.json` 的 `[路径, options]` 中，`serverUrl`、`pollMs` 分别优先于对应环境变量；只有该键缺省时才回退。显式非法选项会停用本插件，不会回退到另一个中心。`serverUrl` 仅接受无凭据、无 query/hash 的 HTTP(S) URL，HTTP 重定向禁止跟随。`pollMs` 必须为有限正数，最低 10000 毫秒并向下取整；缺省且无环境配置时为 30000。

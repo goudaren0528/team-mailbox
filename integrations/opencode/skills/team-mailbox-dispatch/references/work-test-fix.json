@@ -1,0 +1,30 @@
+{
+  "to": "bob",
+  "title": "[WORK:v1][FIX][TEST_FIX][A-1042] <replace-summary>",
+  "project": "project-a",
+  "text": {
+    "schema": "on-duty.work.v1", "ticket_id": "A-1042", "revision": 1,
+    "project": "project-a", "target": "FIX", "mode": "TEST_FIX",
+    "summary": "<actual-testing-and-fix-scope-no-invented-bug>",
+    "code": {
+      "head_commit": "<actual-full-head-commit-not-a-branch>", "base_commit": "<actual-full-base-commit>",
+      "related_files": [], "dirty_scope": "<actual-clean-status-or-agreed-committed-only-scope>"
+    },
+    "requirements": {
+      "expected": "<actual-expected-behavior>",
+      "acceptance": [{"id": "AC-1", "statement": "<decidable-criterion>"}],
+      "documents": [], "must_verify": ["<actual-required-check>"]
+    },
+    "environment": {
+      "target": "<approved-test-target>", "roles": ["<approved-role>"],
+      "profile": "<approved-logical-profile>", "account_ref": "<approved-credential-reference-only>",
+      "data_refs": ["<approved-data-reference-or-explicit-none>"], "cleanup": "<approved-cleanup-policy>"
+    },
+    "constraints": {
+      "scope": "<actual-test-and-fix-scope>", "out_of_scope": ["<actual-exclusion>"],
+      "fallback": "<approved-fallback-policy>", "high_risk": ["<actual-restriction>"],
+      "allow_commit": false, "allow_push": false
+    },
+    "references": {"message_ids": []}
+  }
+}
