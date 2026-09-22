@@ -1,0 +1,16 @@
+{
+  "to": "alice", "title": "[RESULT:v1][FIX][A1043][r1] FAIL", "project": "project-a",
+  "text": {
+    "ticket_id": "A1043", "revision": 1, "original_message_id": "<actual-positive-message-id-number>",
+    "report_id": "<actual-report-reference>", "executing_agent": "<actual-executing-agent>",
+    "code": {"base_commit": "<actual-tested-full-base-or-explain-absence>", "head_commit": "<actual-tested-full-head>", "dirty_scope": "<actual-tested-scope>"},
+    "delivery": {"location": "<actual-delivery-reference-or-explained-not-applicable>", "modification_state": "<actual-committed-uncommitted-or-no-change>", "related_files": []},
+    "tests": {"conclusion": "FAIL", "coverage": [{"ac_id": "AC-1", "actual": "<observed-failure-not-mere-blocker>", "evidence_refs": ["<actual-failure-evidence>"]}]},
+    "computer_use": {"used": "<replace-with-actual-boolean>", "details": "<actual-use-or-reason-not-used>"},
+    "fallback": {"used": "<replace-with-actual-boolean>", "details": "<actual-use-and-authority-or-not-used>"},
+    "failed": [{"ac_id": "AC-1", "actual": "<observed-failure>", "evidence_refs": ["<actual-failure-evidence>"]}],
+    "blocked": [], "not_run": [],
+    "evidence": [{"ref": "<actual-accessible-link-or-attachment-reference>", "revision": "<actual-tested-revision>"}],
+    "next_actions": ["<actual-next-action>"], "references": {"message_ids": []}
+  }
+}

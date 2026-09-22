@@ -80,9 +80,23 @@ The MCP bridge can independently send and receive, and plugin failures do not da
 - Open a session and expand the sidebar. Only when `get_unread_summary` returns `total > 0` can the unread block/counts be visually checked after about 30 seconds with a reachable center. `total: 0` normally hides it and is not proof that the plugin loaded; report positive-count UI verification as pending. Do not manufacture unread messages or mark/read messages to test.
 - Report each item as passed, blocked or unverified with evidence. If the interface cannot be checked, report UI unverified and do not mark the standard installation/update complete. Missing/loading-failed plugins require a blocker report and troubleshooting, even when MCP works.
 
+## Development testing and acceptance
+
+team-mailbox remains a general text, research-material and file mailbox. The sender Agent uses this scenario only for an explicit request to assign TEST, BUGFIX or TEST_FIX work, or report its result—not a keyword match. Ordinary messages stay free-form; MCP does not automatically recognize or enforce the protocol, and receiving a message never automatically executes it.
+
+Use `/team-mailbox-dispatch`, or say: “Prepare a QA TEST assignment for project-a to bob; show me the preview first.” Role (`QA` or `FIX`) identifies the intended responsibility; mode (`TEST`, `BUGFIX`, `TEST_FIX`) identifies the work. QA allows only TEST; FIX allows all three. Missing required information must be clarified first; sending needs explicit authorization after preview. There is no persistent deduplication or exactly-once guarantee.
+
+See the [scenario guide and templates](docs/work-orders.md). Install the **whole** `integrations/opencode/skills/team-mailbox-dispatch/` folder, including all five JSON files in `references/`, into the same scope's `skills/`; copy `integrations/opencode/commands/team-mailbox-dispatch.md` into `command/`. Templates contain non-sendable placeholders, including `code.head_commit`; replace and verify actual target-repository objects, never treat examples as real SHA evidence. Fully quit and restart OpenCode after installation; natural-language Skill selection is guidance, not enforcement.
+
+### Additional initial-install prompt for the development scenario
+
+> Install the development/testing scenario entry alongside the reading integration: copy the whole team-mailbox-dispatch Skill folder with references/ and its command as described above. Preserve other installed files; inspect and back up any same-name customization before updating. Verify all installed hashes and command availability after restart, without sending an assignment or reading real messages. This installs an entry, not a requirement to format ordinary messages as WORK. No center restart is needed.
+
 ## Update prompt (existing OpenCode users)
 
 Replace `<repo-path>` and `http://<central-host>:8787` with your own checkout and the administrator's shared central address before forwarding:
+
+> Also install/update the development/testing scenario's entire `skills/team-mailbox-dispatch/` folder, including all five references/ templates, and `command/team-mailbox-dispatch.md` from my updated checkout. Preserve other integrations and back up same-name customizations. Check installed hashes, then ask me to quit/restart OpenCode and verify by-name Skill loading; do not send test assignments. Ordinary messaging stays unchanged; use templates only for explicit assignment/result intent, preview and obtain sending authorization.
 
 > The full OpenCode installation is required: MCP bridge, both sidebar files, explicit `tui.json` options, and reading Skill/command. Check version compatibility and both installed files against the updated checkout, then report every item in the acceptance checklist above. If the plugin or tuple was previously skipped, install/add it now, without duplicating an existing entry. Missing/loading-failed plugins are blockers; unavailable UI verification remains unverified, never complete. MCP connectivity alone does not complete this update.
 
