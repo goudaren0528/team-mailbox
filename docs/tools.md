@@ -65,6 +65,8 @@
 
 ### 多消息稳定选择
 
+“查看消息”“读消息”“查看某人的消息”和阅读 TEST/BUGFIX/TEST_FIX/RESULT 工单消息属于 team-mailbox-read，不因 TEST 关键词转入 dispatch。多条浏览必须先原生 question，禁止 assistant 打印候选 Markdown 列表或表格代替选择。明确消息 ID 且明确直接阅读时免选：先用 getmsg 查该 ID 的附件元数据，再先保存附件、后读正文；不为查附件而提前读正文。Skill 与工具描述仍是 Agent 指引，不是 runtime 强制；宿主工具详情中的原始 JSON 可能可见，不能承诺隐藏。
+
 OpenCode 安装 [Skill 与命令](../integrations/opencode/README.md)后，使用 `/team-mailbox-read`：Agent 调用原生 question 单选，不输出 Markdown 消息列表。每页最多 10 条消息加导航/取消，label 保留完整真实 id，描述可含发件人、时间、截短标题和附件信息。保存选项到真实 id 的映射，不把序号或未知自定义答案猜成 id；翻页、取消只操作列表，不读正文、不下载、不标读。恢复旧备份后不要复用旧选择缓存。
 
 默认优先未读，可切全部，并尊重用户过滤。列表仍按 id 升序；不冒称全局最新优先。选中后有附件先保存及校验成功，再分页读取完整正文；失败询问重试、明确跳过附件继续或取消。正文失败重试只读正文，不重复下载。正文可分次展示，不静默总结或截断。Skill 是 Agent 编排指令，不是强制 UI 保证；无 question 时说明限制并征求降级方式。
@@ -81,11 +83,11 @@ OpenCode 安装 [Skill 与命令](../integrations/opencode/README.md)后，使�
 
 `id` 为实际消息正整数 id；`offset` 默认 0、非负；`limit` 默认 2000，范围 1–4000。仅收件人能读取正文，发送者不能把此工具当发件箱读取（发给自己的消息除外）。
 
-返回 `id/from/to/title/project/time/read/markedRead/totalLength/offset/limit/hasMore/text/attachment`。当 `hasMore=true`，下次使用**同一个 id**和 `offset + limit`，直到 false。超出正文末尾的 offset 会返回空 text，不是自动从头读取。
+返回 `id/from/to/title/project/time/read/markedRead/totalLength/offset/limit/hasMore/text/attachment`。当 `hasMore=true`，下次使用**同一个 id**和 `offset + limit`，直到 false。非空正文的 `offset >= totalLength` 仍返回 HTTP 200、空 `text`、`hasMore=false`，但不触发标读；不是自动从头读取。空正文只有 `offset=0` 是有效末页，`offset>0` 同样不触发标读。越界返回的 `read` 保留现有状态，`markedRead=false`，不会把已读改回未读。
 
 ### 自动已读规则
 
-**本次请求 `hasMore` 为 false（即读到了正文末尾）时，该消息被标记为已读。** 分段读取的中间页不标记，避免只看开头就把消息从未读中清掉。
+**有效末页才触发已读：非空正文须返回非空正文片段且 `hasMore=false`；空正文须 `offset=0`。** 仅凭 `hasMore=false` 不能判断标读；越界空片段和中间页不标记。这不是“已证明完整阅读”的回执，也不要求服务端记录此前各页。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -102,7 +104,7 @@ OpenCode 安装 [Skill 与命令](../integrations/opencode/README.md)后，使�
 
 其他细节：
 
-- **纯附件消息**（`text` 为空字符串、`totalLength` 为 0）单页即末尾，读取时同样标记已读。
+- **纯附件消息**（`text` 为空字符串、`totalLength` 为 0）仅 `offset=0` 的空正文页触发已读；先收附件再调用该页。
 - 重复读取同一条不会重复计数，第二次起 `markedRead` 为 false。
 - 403/404 在标记之前返回，**被拒绝的读取绝不改变已读状态**。
 - 标记失败不会导致读取失败：正文照常返回，`markedRead` 为 false，消息仍为未读。

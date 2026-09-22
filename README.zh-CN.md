@@ -77,7 +77,7 @@ MCP 可以独立收发，插件失败不会丢失消息；但缺装或加载失�
 - 记录并比较两个插件源文件与安装副本的 SHA-256，确认同目录；阅读 Skill 和 command 在同作用域完成安装或更新。
 - 核对 `tui.json` 恰有一个 team-mailbox tuple，含管理员的 `serverUrl` 和 `pollMs: 30000`，保留其他设置。无需全局环境变量或绝对下载目录配置。
 - 完全退出并重启 OpenCode，确认 MCP 工具、doctor 身份，以及 `/team-mailbox-read` 命令可用；不打开真实消息。
-- 进入会话、展开侧栏。中心可达且 `get_unread_summary` 返回 `total > 0` 时，约 30 秒后核对区块与条数。`total: 0` 隐藏是正常行为，但不能证明加载成功，正数 UI 验收应记录待完成；不要造消息或读正文、标读来测试。
+- 进入会话、展开侧栏，挂载立即拉取；正常变化约 0–30 秒加网络耗时体现，非硬实时。成功正数结果才可核对区块与条数，不能拿异常旧数据验收当前数量。成功零未读隐藏正常，但不能证明加载成功，正数 UI 验收应记录待完成；不要造消息或读正文、标读来测试。
 - 每项报告通过、阻塞或未验收及证据。无法检查界面时明确 UI 未验收，不得报告标准安装/更新完整完成；缺装或加载失败必须报告阻塞，即使 MCP 正常。
 
 ## 开发测试与验收
@@ -100,13 +100,15 @@ team-mailbox 仍是通用文本、调查资料与文件信箱。发送方 Agent 
 
 > OpenCode 必须完整安装 MCP bridge、两个侧栏文件、显式 tui.json options、阅读 Skill/command。核对版本兼容性与文件 SHA-256，逐项报告上方验收清单。此前跳过的插件或 tuple 必须补齐；已有条目更新，不重复添加。缺装/加载失败是阻塞，UI 未验收必须记录未完成，不能仅凭 MCP 连通完成更新。
 
-> 请按[插件说明](integrations/opencode/README.md)更新我已安装的 team-mailbox 侧栏。在 `<仓库路径>` 检查 `git status` 并执行 `git pull --ff-only`；若本地改动冲突或无法快进，停止并报告，不强制覆盖或丢弃改动。从**我自己更新后的仓库**重新复制并覆盖 `integrations/opencode/team-mailbox-unread.tsx` 和 `integrations/opencode/unread-core.mjs` 到原有 OpenCode 插件目录，两个文件保持同目录。展示配置改动并等我确认，先备份 `tui.json`，将**已有** team-mailbox 项改成 `["./plugins/team-mailbox-unread.tsx",{"serverUrl":"http://<central-host>:8787","pollMs":30000}]`，不要追加重复项，不删除其他插件或配置。中心地址用管理员提供的共享中心，不是本机 localhost（除非我自己就是中心）。此次依赖未变，无需安装/切换 Node 或重新 `npm ci`，无需永久全局环境变量。提醒我完全退出并重启 OpenCode，进入会话、展开侧栏；中心可达且有未读时至多约 30 秒应显示，`total: 0` 时不显示。用 `get_unread_summary` 核对条数，用同一中心地址运行 `npm run doctor` 检查连通性和身份，不为验证而发送或标读消息。报告仓库版本和结果。
+> 请按[插件说明](integrations/opencode/README.md)更新已安装集成。在 `<仓库路径>` 检查 git status 并 pull --ff-only，冲突时停止，不丢弃改动。从自己的更新仓库重新复制 integrations/opencode/team-mailbox-unread.tsx 和 integrations/opencode/unread-core.mjs 到原有插件目录，保持同目录；复制阅读 Skill 文件夹到 skills/，仓库 commands/team-mailbox-read.md 到 command/。保留自定义内容与其他集成；已有正确 tui.json 无需修改，必要修正先展示并获准。运行依赖未变，已有用户无需 npm ci 或切换 Node。完全退出重启 OpenCode、展开侧栏：挂载立即拉取，之后默认每 30 秒轮询，正常变化约 0–30 秒加网络耗时体现，非硬实时。连接异常显示提示并可能保留旧数据，成功零未读隐藏。不为验证发送、读正文或标读消息。报告版本、文件核对和未验收 UI 项。
 
 > 同时更新 Skill 到 skills/team-mailbox-read/、命令到 command/team-mailbox-read.md。不要询问绝对收件路径，downloads/ 固定在实际运行的 bridge 包根，不是 Agent cwd。如有历史 MSG_DOWNLOAD_DIR，先备份并展示仅移除本 MCP environment 该项的改动，获准后处理；保留其他 env、tui tuple 的 serverUrl/pollMs 和插件。不删除旧目录/附件，不复制中心 downloads。全部更新后重启；依赖未变，已有用户无需 npm ci，初装仍需。
 
-此前配置修复曾由用户在 **OpenCode 1.18.31** 确认显示，不代表本次视觉已验收。本轮证据为核心 59/59、插件逻辑 19/19、Skill 静态检查与 TSX 解析，不能代替真实 UI 验收或保证未来版本。自动已读发生在中心，旧 bridge 同样受影响。
+此前配置修复曾由用户在 **OpenCode 1.18.31** 确认显示，不代表本次视觉已验收。插件现有 30 项逻辑/生命周期测试，包含晚到 resolve/reject 竞态：仅当前 generation/controller 可释放 running 锁。无需全局 TypeScript，不可靠的 TSX 子进程测试已删除。核心与 Skill 静态检查不能代替 TSX 语法、真实 UI 验收或保证未来版本，本轮 TSX 与宿主 UI 仍未验证。本版不包含业务 IP 映射变更；中心越界已读修复须管理员另行更新服务并重启，无数据库迁移。
 
 ### 原生阅读与自动收件
+
+“查看消息”“读消息”“查看某人的消息”及阅读工单消息走 team-mailbox-read，不因 TEST 关键词走 dispatch。多条浏览必须先原生 question，禁止 assistant Markdown 候选列表或表格；question 不可用先说明并征求替代，不静默降级。明确 ID 且明确直接阅读时免选，先通过 getmsg 查附件元数据，再先保存后读正文。这些仍是 Agent 指引，不是 runtime 强制；不能保证宿主隐藏原始工具 JSON。
 
 `/team-mailbox-read` 引导 Agent 使用原生 question，每页最多 10 条消息加导航/取消，保留完整真实 id。默认未读、可切全部并尊重过滤；getmsg 仍按 id 升序，不是假称全局最新优先。取消/翻页不读正文、不下载、不标读；未知自定义答案不猜 id。
 
@@ -175,7 +177,7 @@ npm run doctor
 
 自动收件首选 `receive_attachment({attachment_id})`：唯一必填参数避免宿主将所有 schema 属性强制 required 后无法省略 path。bridge 首次收件时懒创建自身包根 downloads/，强制自动命名、不覆盖，兼容已有高级 MSG_DOWNLOAD_DIR。仅用户明确指定路径时使用 `save_attachment`，其旧契约保留。保存并完成哈希校验后再读正文；失败用原生 question 选择重试/明确跳过/取消；成功附 cleanupWarning 时报告警告，不重复下载。更新已安装的阅读 Skill 并重新连接客户端 bridge 以发现新工具；工具缺失时不要猜路径。无需重启中心或迁移数据库。
 
-**已读语义（破坏性变更）：** `getmsg` 列摘要不改已读，但 **`read_message` 读到正文末尾会自动标记已读**；分段读取的中间页不标记，纯附件消息单页即末尾也会标记。响应新增 `markedRead` 说明是否由本次调用触发。`mark_read` 保留，用于不读正文直接批量标记。没有「标记为未读」。
+**已读语义：** getmsg 不标读；有效正文末页触发已读。非空正文 offset>=totalLength 仍返回 HTTP 200、空 text、hasMore=false，但不标读；空正文（含纯附件消息）只有 offset=0 标读。中间页不标读；越界保留现有 read 状态、markedRead=false。hasMore=false 本身不等于有效末页，也不证明已完整阅读。显式 mark_read 保留，没有「标记为未读」。
 
 ### 未读提醒
 
@@ -189,7 +191,7 @@ npm run doctor
 乙  2 条 · 📎 1 附件
 ```
 
-只显示发件人、条数、附件数（附件为 0 时省略附件段），不显示标题和正文。无未读时不渲染、不占位；最多显示 10 行发件人，超出部分不再渲染，也不显示截断提示。默认 30 秒轮询，最低 10 秒。tuple 选项 `serverUrl`、`pollMs` 分别优先于 `MSG_SERVER_URL`、`MSG_UNREAD_POLL_MS`，只有缺省键才回退环境变量；显式非法选项会停用插件，不回退。中心不可达或响应异常时静默保留上次结果。
+只显示发件人、条数、附件数（附件为 0 时省略附件段），不显示标题和正文；最多 10 行发件人，无额外截断提示。成功拉取且零未读时隐藏。首次挂载立即拉取，之后默认 30 秒轮询、最低 10 秒；正常变化通常在 0–30 秒加网络耗时后体现，不是硬实时上限。最后卸载停止轮询并 abort 在途请求，通过 generation 丢弃晚到结果，重新挂载立即拉取。失败保留最后成功数据并在标题区域显示 `[连接异常 · 旧数据]`（旧数据为零也显示）；从未成功时显示 `[连接异常]`，恢复成功后去提示。tuple 的 serverUrl/pollMs 优先于环境回退，显式非法选项停用插件。
 
 **侧栏插件是 OpenCode 标准安装必装项**；安装与降级说明见[插件说明](integrations/opencode/README.md)和[同事接入](docs/client.md)。侧栏 slot 是 OpenCode 源码级接口，升级可能失效，须报告阻塞并排障，不能跳过。MCP 仍可独立收发，已存消息不受影响；其他客户端不要求安装此不兼容插件。没有桌面通知、声音提醒或实时推送。
 

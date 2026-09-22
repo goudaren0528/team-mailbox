@@ -251,12 +251,13 @@ export function createServer(options = {}) {
         const textChunk = msg.text.slice(offset, offset + limit);
         const hasMore = offset + limit < totalLength;
 
-        // Reaching the end of the body marks the message read. Intermediate pages of a
-        // paged read must not, or skimming the first screen would silently clear it.
-        // A file-only message has an empty text, so its single page is already the end.
+        // Only a valid final chunk marks read; out-of-range offsets still return an
+        // empty body for compatibility, but must not consume the unread state.
+        // For a file-only message, offset zero is the sole valid empty-body page.
+        const reachedEnd = !hasMore && (totalLength === 0 ? offset === 0 : textChunk.length > 0);
         let markedRead = false;
         const alreadyRead = msg.readAt !== null;
-        if (!hasMore && !alreadyRead) {
+        if (reachedEnd && !alreadyRead) {
           try {
             // Reuses the recipient-scoped, already-unread guarded update, so a concurrent
             // mark_read cannot be double counted.

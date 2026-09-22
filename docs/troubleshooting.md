@@ -63,18 +63,18 @@ IPv4-mapped IPv6 会按 IPv4 匹配；mapped CIDR 前缀至少 /96，例如 `/12
 
 ## OpenCode 侧栏不显示未读？
 
-插件运行时失败会静默保留旧结果或不显示，安装 Agent 不能据此静默跳过。OpenCode 标准安装必须包含 MCP、两个侧栏文件、显式 `tui.json` options、阅读 Skill 和 command；缺装/加载失败须报告阻塞。先调用 `get_unread_summary`：`total: 0` 时隐藏正常，但不证明插件加载成功，正数 UI 验收仍待完成。按[验收清单](../integrations/opencode/README.md#安装更新验收清单)记录 SHA-256、配置与重启证据；不发测试消息、不读正文、不标读，无法观察 UI 则明确未验收，不能报告完整安装。
+成功拉取且 `total: 0` 时隐藏正常，但不证明插件加载成功，正数 UI 验收仍待完成。请求异常时显示 `[连接异常]`，曾成功则保留旧结果并显示 `[连接异常 · 旧数据]`；插件缺装或加载失败仍可能不显示，不能混为正常零未读。OpenCode 标准安装必须包含 MCP、两个侧栏文件、显式 `tui.json` options、阅读 Skill 和 command；缺装/加载失败须报告阻塞。按[验收清单](../integrations/opencode/README.md#安装更新验收清单)记录 SHA-256、配置与重启证据；不发测试消息、不读正文、不标读，无法观察 UI 则明确未验收，不能报告完整安装。
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
 | 侧栏完全没有未读区块，其他插件正常 | `tui.json` 里没声明该插件 | 在 `plugin` 数组声明 `["./plugins/team-mailbox-unread.tsx",{"serverUrl":"http://<central-host>:8787","pollMs":30000}]`，替换占位符；先备份，更新已有项，不重复追加，见[插件说明](../integrations/opencode/README.md) |
-| pull 后仍不显示 | 安装副本未更新、未重启、侧栏折叠或没有未读 | 从自己的更新仓库重新复制覆盖两个安装文件，更新已有 tuple 后完全退出重启、进入会话并展开侧栏；中心可达且有未读时至多约 30 秒显示。`get_unread_summary` 返回 `total: 0` 时本来就不显示 |
+| pull 后仍不显示 | 安装副本未更新、未重启、侧栏折叠或没有未读 | 从自己的更新仓库重新复制覆盖两插件、Skill 和 command，完全退出重启、展开侧栏；正常变化约 0–30 秒加网络耗时体现，非硬实时。成功零未读隐藏；异常则应显示连接提示。已有正确 tuple 无需修改 |
 | 已经在 `opencode.json` 里写了 `plugin` 仍不显示 | 写错了文件 | TUI 插件列表**只读 `tui.json`**；`opencode.json` 的 `plugin` 键是给 server 侧插件用的，写在那里对侧栏无效 |
 | 声明了却仍不显示，OpenCode 日志有模块解析错误 | `team-mailbox-unread.tsx` 和 `unread-core.mjs` 不在同一目录 | 入口用相对路径 `./unread-core.mjs` 导入，**两个文件必须放在同一目录**，只复制一个不行 |
 | 配置都对，仍然什么都不渲染 | 中心地址缺失或显式选项非法 | 推荐 `tui.json` tuple：`["./plugins/team-mailbox-unread.tsx", {"serverUrl":"https://mailbox.example.invalid","pollMs":30000}]`，替换为管理员提供的中心地址（不是本地 Node/script 路径）。选项逐键优先于 env，显式非法不回退；禁止 URL 凭据/query/hash 和重定向。`MCP.environment` 只给子进程不给 TUI，Windows 无需永久 env。由用户后续重启生效 |
-| 曾经显示过，现在停在旧数字不再更新 | 中心不可达、超时、返回异常 | 插件静默跳过本轮并保留上次成功结果，**不会标注结果已陈旧**。用 `npm run doctor` 确认中心可达；恢复后下一轮自动刷新 |
+| 显示 `[连接异常 · 旧数据]` 或 `[连接异常]` | 中心不可达、超时、返回异常 | 前者保留最后成功数据，不能当作当前数量；后者尚无成功数据。用 `npm run doctor` 确认中心可达；成功恢复后去提示，正常零未读隐藏 |
 | 未读数刷新很慢 | 轮询是定时拉取，非实时 | `pollMs` 优先，缺省才读 `MSG_UNREAD_POLL_MS`，默认 30 秒、最低 10000 毫秒。显式选项须为有限正数，非法会停用插件；env 非法回落默认。没有实时推送 |
-| 来源 IP 未映射 | 插件所在机器 IP 不在 access.json | 汇总接口同样返回 403，插件静默不显示。找管理员核对 IP，同 `403` 一节 |
+| 来源 IP 未映射 | 插件所在机器 IP 不在 access.json | 汇总接口同样返回 403，已加载插件显示连接异常提示。找管理员核对 IP，同 `403` 一节；业务映射部署不属于本版公开发布 |
 | 升级 OpenCode 后侧栏消失 | `sidebar_content` slot 是**源码级接口、官方文档未记载**，升级可能变更或消失 | 只影响侧栏显示；消息收发和全部 MCP 工具不受影响。可改用 `get_unread_summary` 工具主动查询，或等插件适配 |
 | 发件人很多，只看到 10 行 | 最多渲染 10 行，超出**不显示也不提示** | 这是既定行为。读掉一些消息后剩余发件人会自然显示 |
 
@@ -86,6 +86,10 @@ IPv4-mapped IPv6 会按 IPv4 匹配；mapped CIDR 前缀至少 /96，例如 `/12
 | --- | --- |
 | 找不到 /team-mailbox-read | Skill 文件夹放 skills/，命令文件放 command/（单数），同一全局/项目作用域，完全退出重启；见[安装说明](../integrations/opencode/README.md) |
 | 仍输出 Markdown 消息列表 | 主动运行命令并确认 Skill 已加载；这是 Agent 编排，不是强制 UI。question 不可用应先说明并征求降级方式 |
+| 工具详情仍能看到 JSON 列表 | 禁止的是 assistant 用 Markdown 候选列表代替原生 question；宿主原始工具 JSON 展示不受 Skill 控制，不能承诺隐藏 |
+| 阅读 TEST 工单误进 dispatch | 查看消息、读消息、查看某人的消息及阅读工单属于 read，不能仅按 TEST 关键词派发；更新 Skill 与 command 并重启 |
+| 明确 ID 仍要求多余选择 | 明确直接阅读意图可免选；先查该 ID 附件元数据，先收件后读正文，多条浏览仍须原生 question |
+| 越界读返回 200 空正文但未读数不减 | 新契约：非空正文 offset>=totalLength 不标读；空正文仅 offset=0 标读。不要把 hasMore=false 等同有效末页，也不要为了排障读取真实正文 |
 | path 仍是必填 | 旧 bridge 未更新或宿主仍运行旧进程；更新本地仓库并重启，不能假设旧 schema 支持省略 |
 | 默认保存目录不符合预期 | 默认目录是正在运行的 bridge 源码包根 downloads/，与 Agent cwd 无关。检查是否运行旧 bridge 或仍有 MSG_DOWNLOAD_DIR 高级覆盖；获准后仅移除旧 override，重启，不删除旧文件 |
 | downloads 是文件、链接或无权限 | 文件占位和 symlink/junction 被拒绝；权限/创建失败也不回退其他目录。用户确认后修正本机目录状态；不要自动删目录或链接 |
@@ -94,6 +98,8 @@ IPv4-mapped IPv6 会按 IPv4 匹配；mapped CIDR 前缀至少 /96，例如 `/12
 | 附件成功而正文失败 | 保留实际保存路径，重试仅读正文，不再次下载。完整正文可分次展示，不能静默摘要或截断 |
 
 取消/翻页不读正文、不下载、不标读；其他会话仍可改变已读状态。新侧栏视觉尚不能用纯逻辑/TSX 解析通过代替人工验收：应检查深浅主题、中文和窄栏。
+
+首次挂载立即拉取，之后默认 30 秒轮询；正常变化延迟为 0–30 秒加网络耗时，非硬实时。最后卸载停止并 abort 在途请求，晚到结果被丢弃，重新挂载立即拉取。更新须重新复制两插件、Skill 和 command 并完全退出重启；单独 pull 不更新安装副本。
 
 ## 附件发送、下载、保存失败？
 

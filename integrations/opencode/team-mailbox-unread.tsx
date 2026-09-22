@@ -21,73 +21,33 @@ import { createSignal, For, Show, onCleanup } from "solid-js"
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import {
   buildSummaryUrl,
-  fetchSummary,
+  createPollerCore,
   resolveConfig,
-  toDisplayModel,
 } from "./unread-core.mjs"
 
 const ID = "team-mailbox-unread"
 const SIDEBAR_ORDER = 450
 
-type Summary = Awaited<ReturnType<typeof fetchSummary>>
-
 /**
- * Owns the polling timer. Reference counted so the interval only runs while at
- * least one sidebar view is mounted, and is always cleared on the last unmount
- * (and again on plugin disposal).
+ * Owns the polling timer and lifecycle. Reference counted so the interval only runs
+ * while at least one sidebar view is mounted, and is always cleared on the last unmount
+ * (and again on plugin disposal), cancelling any in-flight fetch.
  */
 function createPoller(url: string, pollMs: number) {
-  const [summary, setSummary] = createSignal<Summary>(undefined)
-  let timer: ReturnType<typeof setInterval> | undefined
-  let users = 0
-  let running = false
+  const core = createPollerCore({ url, pollMs })
+  const [state, setState] = createSignal(core.getState())
 
-  const tick = async () => {
-    if (running) return
-    running = true
-    try {
-      const next = await fetchSummary(url)
-      // `undefined` means: request failed / timed out / payload was rejected.
-      // Skip this round silently and keep the last good result.
-      if (next) setSummary(() => next)
-    } catch {
-      // fetchSummary already swallows everything; this is belt and braces so a
-      // rejected promise can never surface as an unhandled rejection.
-    } finally {
-      running = false
-    }
+  core.subscribe((next) => {
+    setState(() => next)
+  })
+
+  return {
+    state,
+    summary: () => state().summary,
+    displayModel: () => state().displayModel,
+    retain: core.retain,
+    stop: core.stop,
   }
-
-  const stop = () => {
-    if (timer === undefined) return
-    clearInterval(timer)
-    timer = undefined
-  }
-
-  const retain = () => {
-    users += 1
-    if (timer === undefined) {
-      void tick()
-      timer = setInterval(() => {
-        void tick()
-      }, pollMs)
-      // Do not keep the process alive just for the poll timer.
-      const handle = timer as unknown as { unref?: () => void }
-      handle.unref?.()
-    }
-    let released = false
-    return () => {
-      if (released) return
-      released = true
-      users -= 1
-      if (users <= 0) {
-        users = 0
-        stop()
-      }
-    }
-  }
-
-  return { summary, retain, stop }
 }
 
 function View(props: { api: TuiPluginApi; poller: ReturnType<typeof createPoller> }) {
@@ -95,7 +55,7 @@ function View(props: { api: TuiPluginApi; poller: ReturnType<typeof createPoller
   onCleanup(release)
 
   const theme = () => props.api.theme.current
-  const model = () => toDisplayModel(props.poller.summary())
+  const model = props.poller.displayModel
 
   return (
     <Show when={model()} keyed>
@@ -105,6 +65,11 @@ function View(props: { api: TuiPluginApi; poller: ReturnType<typeof createPoller
             <text fg={theme().accent}>
               <b>{current.title}</b>
             </text>
+            <Show when={current.errorText}>
+              <text fg={theme().error || theme().warning}>
+                <b>{current.errorText}</b>
+              </text>
+            </Show>
           </box>
           <For each={current.rows}>
             {(row) => (
