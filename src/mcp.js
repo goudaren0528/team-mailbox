@@ -207,7 +207,7 @@ export function createMcpServer() {
   // Tool 7: save_attachment
   mcpServer.tool(
     'save_attachment',
-    `Downloads an attachment addressed to the current member and verifies SHA-256 before publishing the saved file. Omit path to use downloads/ under this installed bridge package root (not cwd), created only when saving; optional MSG_DOWNLOAD_DIR overrides it with an existing absolute directory. Omission forces auto_name=true and overwrite=false. Explicit path keeps existing semantics. Traceable names use exclusive publication and bounded retries. Saving does not mark read; save successfully before reading the body, or ask to retry, skip or cancel on failure. ${UNTRUSTED}`,
+    `Use only when the user specifies a destination path; prefer receive_attachment for automatic receiving. Downloads an attachment addressed to the current member and verifies SHA-256 before publishing the saved file. Omit path for backward-compatible package-root downloads/ (not cwd), created only when saving; optional MSG_DOWNLOAD_DIR overrides it with an existing absolute directory. Omission forces auto_name=true and overwrite=false. Explicit path keeps existing semantics. Traceable names use exclusive publication and bounded retries. Saving does not mark read; save successfully before reading the body, or ask to retry, skip or cancel on failure. ${UNTRUSTED}`,
     {
       attachment_id: z.number().int().positive().describe('Attachment ID from getmsg or read_message'),
       path: z.string().min(1).optional().describe('Explicit absolute destination path; with auto_name, an existing directory. Omit for bridge-package-root downloads/ (created lazily), or optional existing absolute MSG_DOWNLOAD_DIR override; omission forces auto_name=true and overwrite=false'),
@@ -249,6 +249,18 @@ export function createMcpServer() {
     async () => handleToolCall(async () => {
       return await requestApi('/api/unread-summary', 'GET');
     })
+  );
+
+  // Tool 10: one required input survives hosts that require every schema property.
+  mcpServer.tool(
+    'receive_attachment',
+    `Default first choice for Agent automatic attachment receiving. Takes only attachment_id; no path or overwrite input. Saves to downloads/ under this installed bridge package root (not cwd), created lazily on first receive; optional advanced MSG_DOWNLOAD_DIR must be an existing absolute directory. Always auto-names and never overwrites. Verifies SHA-256 before exclusive publication; returns actual path and hash. Saving does not mark read. Save successfully before reading the body; on failure ask retry, explicitly skip, or cancel. A successful result with cleanupWarning is still saved: report it, do not download again. Use save_attachment only for a user-specified destination. ${UNTRUSTED}`,
+    {
+      attachment_id: z.number().int().positive().describe('Attachment ID from getmsg or read_message, not the message ID'),
+    },
+    async ({ attachment_id }) => handleToolCall(() => saveAttachment({ attachment_id },
+      () => requestApi(`/api/attachments/${attachment_id}`, 'GET', null, CONFIG.attachmentTimeoutMs),
+      CONFIG.downloadDir))
   );
 
   return mcpServer;

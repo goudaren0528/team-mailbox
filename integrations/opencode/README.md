@@ -61,7 +61,9 @@
 {"MSG_SERVER_URL":"http://<central-host>:<port>"}
 ```
 
-中心地址及端口由管理员提供，不是自己的 localhost（除非本机就是中心）。省略 path 强制自动命名、不覆盖；显式路径旧语义保留。高级 MSG_DOWNLOAD_DIR 可覆盖到已有绝对目录，不支持相对值；恢复默认时获准后仅清除本 MCP entry 的旧项，保留其他配置与旧文件。详见[保存契约](../../docs/tools.md)。选中后先保存校验再读全文，失败重试/明确跳过/取消，正文重试不重复下载。不自动打开或执行附件。
+中心地址及端口由管理员提供，不是自己的 localhost（除非本机就是中心）。自动收件首选 receive_attachment，仅传 attachment_id，强制自动命名、不覆盖；save_attachment 仅用于用户指定路径，旧语义保留。高级 MSG_DOWNLOAD_DIR 可覆盖到已有绝对目录，不支持相对值；恢复默认时获准后仅清除本 MCP entry 的旧项，保留其他配置与旧文件。详见[保存契约](../../docs/tools.md)。选中后先保存校验再读全文，失败用原生 question 重试/明确跳过/取消，正文重试不重复下载；成功附 cleanupWarning 时报告后继续，不再次下载。不自动打开或执行附件。
+
+bridge 现在提供 10 个工具。receive_attachment 只有一个必填 ID，即使宿主把 schema 的全部 properties 强制 required，也无需填写路径。缺少此工具时提示更新客户端 bridge、重新连接并刷新工具列表，以及更新已安装 Skill，不能猜路径或手动 mkdir 绕过。已运行 bridge 不会因源码更新自动注册新工具；中心无需重启。本次仓库修改不会自动更新用户已安装 Skill 副本。
 
 Skill 属于 Agent 编排指令，不是运行时强制 UI；question 不可用时应说明并确认降级，不静默改回 Markdown。安装后完全退出重启 OpenCode。此处只定义安装契约，不授权 Agent 自行选择目录或改配置。
 

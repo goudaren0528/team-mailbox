@@ -7,8 +7,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { fixture, relay, cleanup, temp, sha256 } from './helpers.js';
 
-async function client(t, url, env = {}) {
-  const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve('src/mcp.js')],
+async function client(t, url, env = {}, script = path.resolve('src/mcp.js')) {
+  const transport = new StdioClientTransport({ command: process.execPath, args: [script],
     env: { MSG_SERVER_URL: url, MSG_DEVICE_NAME: 'remark-only', MSG_DOWNLOAD_DIR: '', ...env }, stderr: 'pipe' });
   const sdk = new Client({ name: 'real-sdk-test', version: '1.0.0' });
   cleanup(t, async () => { await sdk.close(); await transport.close(); });
@@ -20,6 +20,75 @@ async function call(sdk, name, args = {}) {
   assert.ok(!res.isError, res.content?.[0]?.text);
   return JSON.parse(res.content[0].text);
 }
+
+test('receive_attachment single-property schema survives all-required adaptation and receives into isolated package root', async t => {
+  const f = await fixture(t); const root = temp(t);
+  // A real copied bridge resolves its own package root, without touching production downloads.
+  fs.mkdirSync(path.join(root, 'src'));
+  for (const name of ['mcp.js', 'attachment-save.js', 'config.js', 'url.js']) {
+    fs.copyFileSync(path.join('src', name), path.join(root, 'src', name));
+  }
+  fs.copyFileSync('package.json', path.join(root, 'package.json'));
+  const downloads = path.join(fs.realpathSync(root), 'downloads');
+  const a = await client(t, await relay(t, f.url, '127.0.0.1'));
+  const url = await relay(t, f.url, '127.0.0.2');
+  const b = await client(t, url, {}, path.join(root, 'src/mcp.js'));
+  const { tools } = await b.listTools();
+  const schema = tools.find(tool => tool.name === 'receive_attachment').inputSchema;
+  assert.deepEqual(Object.keys(schema.properties), ['attachment_id']);
+  assert.deepEqual(schema.required, ['attachment_id']);
+  t.diagnostic(`receive_attachment SDK schema: ${JSON.stringify(schema)}`);
+  assert.equal(schema.additionalProperties, false);
+  const adapted = { ...schema, required: Object.keys(schema.properties) };
+  assert.deepEqual(adapted, schema, 'requiring every property leaves this schema unchanged');
+  assert.equal(fs.existsSync(downloads), false, 'startup and listTools never create downloads');
+  for (const args of [{}, { attachment_id: 0 }, { attachment_id: 1.5 }, { attachment_id: null }]) {
+    assert.equal((await b.callTool({ name: 'receive_attachment', arguments: args })).isError, true);
+  }
+  assert.equal(fs.existsSync(downloads), false, 'invalid input does not create downloads');
+  const source = path.join(root, '合成附件.md');
+  const bytes = Buffer.from('isolated receive fixture 😀'); fs.writeFileSync(source, bytes);
+  const sent = await call(a, 'send_file', { to: 'B', path: source, text: 'synthetic unread body' });
+  const args = { attachment_id: sent.attachment.id };
+  assert.ok(adapted.required.every(key => Object.hasOwn(args, key)));
+  const first = await call(b, 'receive_attachment', args);
+  const second = await call(b, 'receive_attachment', args);
+  const results = [first, second, ...await Promise.all(Array.from({ length: 8 }, () => call(b, 'receive_attachment', args)))];
+  assert.equal(new Set(results.map(r => r.path)).size, 10);
+  for (const r of results) {
+    assert.equal(path.dirname(r.path), downloads);
+    assert.equal(r.autoNamed, true); assert.equal(r.overwritten, false);
+    assert.equal(r.sha256, sha256(bytes)); assert.deepEqual(fs.readFileSync(r.path), bytes);
+    assert.match(r.name, /^合成附件__A-to-B__/);
+  }
+  const override = temp(t);
+  const overridden = await client(t, url, { MSG_DOWNLOAD_DIR: override });
+  assert.equal(path.dirname((await call(overridden, 'receive_attachment', args)).path), fs.realpathSync(override));
+  const broken = await client(t, url, { MSG_DOWNLOAD_DIR: path.join(root, 'missing-override') });
+  assert.equal((await broken.callTool({ name: 'receive_attachment', arguments: args })).isError, true);
+  assert.equal((await b.callTool({ name: 'receive_attachment', arguments: { attachment_id: 999999 } })).isError, true);
+  const denied = await client(t, await relay(t, f.url, '127.0.0.3'), { MSG_DOWNLOAD_DIR: override });
+  assert.equal((await denied.callTool({ name: 'receive_attachment', arguments: args })).isError, true);
+  assert.equal((await call(b, 'getmsg', { unread_only: true })).messages[0].id, sent.id);
+  assert.equal((await call(b, 'get_unread_summary')).total, 1, 'success and failures never mark read');
+  assert.equal(fs.readdirSync(downloads).length, 10, 'no leftover staging or overwritten copies');
+});
+
+test('receive_attachment rejects corrupt download over real SDK without publishing or reading body', async t => {
+  const dir = temp(t); const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push(req.url);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ name: 'synthetic.md', data_base64: Buffer.from('corrupt').toString('base64'), sha256: sha256(Buffer.from('expected')) }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  cleanup(t, () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const sdk = await client(t, `http://127.0.0.1:${server.address().port}`, { MSG_DOWNLOAD_DIR: dir });
+  const result = await sdk.callTool({ name: 'receive_attachment', arguments: { attachment_id: 1 } });
+  assert.equal(result.isError, true); assert.match(result.content[0].text, /SHA-256/);
+  assert.deepEqual(requests, ['/api/attachments/1'], 'no body or mark-read request');
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
 
 test('SDK default inbox schema, concurrent saves and failures do not mark messages read', async t => {
   const f = await fixture(t); const dir = temp(t);
@@ -44,15 +113,15 @@ test('SDK default inbox schema, concurrent saves and failures do not mark messag
   assert.equal((await call(b, 'read_message', { id: sent.id })).markedRead, true);
 });
 
-test('Real SDK stdio A/B/C via real source-bound relays, five tools and prefix', async t => {
+test('Real SDK stdio A/B/C via real source-bound relays, ten tools and prefix', async t => {
   const f = await fixture(t);
   const a = await client(t, await relay(t, f.url, '127.0.0.1', '/prefix'));
   const b = await client(t, await relay(t, f.url, '127.0.0.2'));
   const c = await client(t, await relay(t, f.url, '127.0.0.3'));
   const { tools } = await a.listTools();
-  assert.deepEqual(tools.map(x => x.name).sort(), ['get_unread_summary', 'getmsg', 'list_peers', 'mark_read', 'read_attachment_text', 'read_message', 'save_attachment', 'send_file', 'send_message']);
-  assert.equal(tools.length, 9, 'eight original tools plus get_unread_summary');
-  for (const name of ['send_message', 'getmsg', 'read_message', 'send_file', 'save_attachment', 'read_attachment_text']) {
+  assert.deepEqual(tools.map(x => x.name).sort(), ['get_unread_summary', 'getmsg', 'list_peers', 'mark_read', 'read_attachment_text', 'read_message', 'receive_attachment', 'save_attachment', 'send_file', 'send_message']);
+  assert.equal(tools.length, 10, 'nine previous tools plus receive_attachment');
+  for (const name of ['send_message', 'getmsg', 'read_message', 'send_file', 'save_attachment', 'receive_attachment', 'read_attachment_text']) {
     assert.match(tools.find(x => x.name === name).description, /untrusted data/);
   }
   assert.deepEqual((await call(a, 'list_peers')).map(x => x.name), ['A', 'B', 'C']);

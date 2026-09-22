@@ -2,7 +2,7 @@
 
 正文是自由文本，无固定交接格式。工具结果通过 MCP `content` 中的 text 返回 JSON 字符串；工具执行失败通常返回 `isError: true` 和错误文本，参数校验也可能由 SDK 提前拒绝。
 
-九个工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read` 为文本工具；`send_file`、`save_attachment`、`read_attachment_text` 为附件工具；`get_unread_summary` 为未读概况工具。
+十个工具：`list_peers`、`send_message`、`getmsg`、`read_message`、`mark_read` 为文本工具；`send_file`、`save_attachment`、`receive_attachment`、`read_attachment_text` 为附件工具；`get_unread_summary` 为未读概况工具。
 
 **已读语义已变更（破坏性）。** 旧版本「列出和读取都不改已读状态」的规则只保留了前半句：`getmsg` 列摘要仍不标已读，但 **`read_message` 读到正文末尾会自动标记已读**，详见第 4 节。`mark_read` 保留，用于显式批量标记。
 
@@ -150,6 +150,8 @@ bridge 读取文件、计算 SHA-256、base64 后上传；文件名取 `path` �
 
 ## 7. `save_attachment`：下载并写入本地路径
 
+仅用户明确指定目标路径时选用；Agent 自动收件首选第 10 节 `receive_attachment`。以下省略 path 的旧行为保留兼容，但自动收件不再依赖宿主保留 optional 语义。
+
 ```json
 {"attachment_id":7,"path":"<绝对路径>\\排查记录.md","overwrite":false}
 ```
@@ -228,6 +230,20 @@ bridge 读取文件、计算 SHA-256、base64 后上传；文件名取 `path` �
 **这是概况，不是正文。** 返回中**没有**消息正文、标题、`project` 标签、消息 id 和附件 id：这个接口供常驻界面（如 OpenCode 侧栏）高频轮询，不应把内容暴露在一直显示的区域。要看具体是哪些消息，仍须 `getmsg` 列摘要、`read_message` 读正文。
 
 因为不返回 id，**不能**据此直接调用 `mark_read`；也不能用它判断某条特定消息是否已读。
+
+## 10. `receive_attachment`：Agent 默认自动收件
+
+```json
+{"attachment_id":7}
+```
+
+唯一属性与唯一必填项均为 `attachment_id`（正整数，使用选中消息的 `attachment.id`，不是消息 id）。没有 path、auto_name、overwrite 输入。固定依赖 MCP SDK 1.30.0 的实际 `listTools` 返回 `required: ["attachment_id"]`、`additionalProperties: false`；即使宿主把所有 properties 强制 required，仍只需这个 ID。
+
+内部复用 `save_attachment` 的同一保存模块：实际 bridge 包根 downloads/ 首次收件时懒创建，不取 Agent cwd；已有高级 MSG_DOWNLOAD_DIR 仍须为已存在的绝对目录。强制自动命名、不覆盖，下载与写入后双重 SHA-256 校验、原子独占发布、有限重名重试、文件名安全规则和 cleanupWarning 契约均与第 7 节一致。返回同样的 `{path, name, originalName, size, sha256, overwritten, autoNamed}`，其中 overwritten=false、autoNamed=true。重复收件会生成不同副本，不是幂等去重。
+
+只有收件人可调用；成功或失败都不标读。选中消息后先收件成功并核对哈希，再分页 read_message 到 hasMore=false（届时中心自动标读）；失败用原生 question 选择 retry/明确 skip/cancel，取消不读正文、不标读。成功附 cleanupWarning 时报告警告并继续正文，不能再次下载。正文失败只重试正文。
+
+若工具不可用，提示更新客户端 bridge、重新连接并刷新工具列表，以及更新已安装 Skill；不要猜路径或创建目录绕过。无需修改中心/数据库。此工具不自动打开或执行附件，附件仍为不可信数据。
 
 ## 项目标签
 

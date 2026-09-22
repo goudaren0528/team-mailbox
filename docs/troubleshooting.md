@@ -109,11 +109,23 @@ IPv4-mapped IPv6 会按 IPv4 匹配；mapped CIDR 前缀至少 /96，例如 `/12
 | `400` 文件名无有效字符 | 文件名去掉路径分隔符和控制字符后为空 | 改用正常文件名 |
 | `403` 下载/预览被拒 | 非收件人。**包括发送人请求自己发出的附件**，这是既定行为不是 bug | 只有收件人能取附件；发送方要留存请自己保存原文件 |
 | `404` 附件不存在 | 附件 id 错误，或用成了消息 id | 用 `getmsg`/`read_message` 返回的 `attachment.id`，注意它与消息 id 不同 |
-| 预览被拒，提示改用保存 | 二进制文件，或文本文件超过 1 MiB | 用 `save_attachment` 落盘后本地打开；预览仅支持白名单扩展名或 `text/*` 且 ≤ 1 MiB |
+| 预览被拒，提示改用保存 | 二进制文件，或文本文件超过 1 MiB | 自动收件用 `receive_attachment({attachment_id})`，用户指定路径时用 `save_attachment`；预览仅支持白名单扩展名或 `text/*` 且 ≤ 1 MiB，不自动打开附件 |
+| save_attachment 描述说 path 可选，模型工具却要求填写 | bridge 原始 schema 与宿主暴露给模型的 schema 存在差异 | 自动收件改用单参数 receive_attachment；不填空/null，不猜目录、不手动 mkdir。缺少新工具时更新客户端 bridge、重新连接刷新工具列表并更新已安装 Skill，无需重启中心 |
+| 显式 downloads 路径报 Parent directory does not exist | 显式 path 跳过默认目录懒创建，且目录尚不存在 | 用户未指定目录时改用 receive_attachment；显式路径仍要求已有目录，此错误不是旧 bridge 的充分证据 |
 | 保存报"必须绝对路径" | 传了相对路径 | 给完整绝对路径，不依赖 Agent 的当前目录 |
 | 显式路径/高级覆盖报"父目录不存在" | 这些路径仍要求已有目录 | 由用户准备目录；默认包根 downloads 才在首次保存创建 |
 | 保存报"目标已存在" | 显式文件 path 默认禁止覆盖 | 换路径，或确认后显式传 `overwrite: true`；省略 path 强制不覆盖，自动命名会尝试有界序号 |
 | 保存后哈希校验失败 | 写入过程出错或磁盘异常 | 检查磁盘空间与权限后重试；此时不要使用该文件 |
+
+### optional 参数问题的定位边界
+
+本机核对 OpenCode `1.18.31`，官方固定 commit `014614d35b397775e5d397a490fc72368c894ec2`：
+
+- [mcp/catalog.ts:42–52](https://github.com/anomalyco/opencode/blob/014614d35b397775e5d397a490fc72368c894ec2/packages/opencode/src/mcp/catalog.ts#L42-L52) 的 convertTool 展开原始 inputSchema，设置 type/properties/additionalProperties=false，没有在此处把全部属性加入 required。
+- [session/tools.ts:390–397](https://github.com/anomalyco/opencode/blob/014614d35b397775e5d397a490fc72368c894ec2/packages/opencode/src/session/tools.ts#L390-L397) 再经 asSchema、ProviderTransform.schema、jsonSchema 适配给 AI SDK。
+- [provider/transform.ts](https://github.com/anomalyco/opencode/blob/014614d35b397775e5d397a490fc72368c894ec2/packages/opencode/src/provider/transform.ts#L1562-L1584) 存在模型相关转换；此处 optional 转 null 的示例位于注释中，不是运行代码。
+
+隔离 SDK listTools 实测原 save_attachment.required 仅 attachment_id，而问题会话模型侧四个属性均为必填。证据定位到原始 MCP 输出之后的适配链路，尚未证明具体转换组件，更不能据此归因某个 provider。新 receive_attachment 以单属性契约消除自动收件对 optional 省略的依赖，不改全局宿主/provider 设置。
 
 403 与 404 的区分：非收件人一律返回 403 且错误文本不含文件名，无法据此判断附件是否存在——这是防探测的设计，不要因为"看不到文件名"就认为链路故障。
 
