@@ -1,6 +1,6 @@
 # OpenCode 未读侧栏与消息阅读
 
-在 OpenCode TUI 的右侧栏常驻显示 team-mailbox 的未读消息概况。
+在 OpenCode TUI 的右侧栏常驻显示 team-mailbox 的未读消息概况。**OpenCode 标准安装必须完成 MCP bridge、两个侧栏文件、显式 `tui.json` tuple（`serverUrl`、`pollMs`）、阅读 Skill 和 command；初装与更新均不能跳过。** 其他客户端不安装这些 OpenCode 专属集成。
 
 ```
 📬 未读消息 · 3
@@ -42,7 +42,16 @@
 
 3. 将 `serverUrl` 替换为管理员提供的共享中心 HTTP(S) 地址，不是本机 localhost（除非自己就是中心），也不是 Node 或 bridge 路径。无需永久环境变量。完全退出并重启 OpenCode，进入会话并展开侧栏；中心可达且有未读时至多约 30 秒显示，`total: 0` 不显示。可用 `get_unread_summary` 核对条数，用同一中心地址运行 `npm run doctor` 检查连通性和身份。
 
-不装这个插件不影响消息收发，只是没有未读提醒。
+MCP 可独立收发，插件失败不会丢消息；但缺装或加载失败须报告阻塞与排障步骤，不能仅凭 MCP 连通报告 OpenCode 标准安装完成。
+
+## 安装/更新验收清单
+
+1. 记录 checkout revision 与 OpenCode 版本，对照下方固定版本证据核对兼容性；历史 1.18.31 显示记录不保证未来版本。
+2. 对 `team-mailbox-unread.tsx` 和 `unread-core.mjs` 各自记录源文件及安装副本 SHA-256 并比较（PowerShell 可用 `Get-FileHash -Algorithm SHA256 -LiteralPath '<文件路径>'`），确认安装副本同目录；Skill 和 command 在同作用域安装/更新。
+3. 备份并核对 `tui.json` 恰有一个 team-mailbox tuple，显式配置管理员中心 `serverUrl` 和 `pollMs: 30000`。已有条目更新、缺少才补齐，保留其他插件/设置。无需永久环境变量或绝对下载目录配置。
+4. 完全退出重启 OpenCode，确认十个 MCP 工具、doctor 身份正确，以及 `/team-mailbox-read` 可用，不打开真实消息。
+5. 进入会话并展开侧栏；中心可达、`get_unread_summary` 返回 `total > 0` 时约 30 秒后核对区块与条数。`total: 0` 隐藏正常，不代表已证明加载成功，正数 UI 验收应记录待完成。
+6. 每项报告通过、阻塞或未验收及证据。无法观察 UI 时明确记录未验收、标准安装/更新未完成。不能自动发测试消息、读真实正文或标读来验证；缺装/加载失败必须排障，不能降为跳过项。
 
 ## 原生选择、默认收件与完整阅读
 
@@ -68,6 +77,8 @@ bridge 现在提供 10 个工具。receive_attachment 只有一个必填 ID，�
 Skill 属于 Agent 编排指令，不是运行时强制 UI；question 不可用时应说明并确认降级，不静默改回 Markdown。安装后完全退出重启 OpenCode。此处只定义安装契约，不授权 Agent 自行选择目录或改配置。
 
 ## 已安装用户更新
+
+先核对以上必装项；此前跳过的文件或 tuple 必须补齐，已有项原位更新不重复添加。完成后逐项报告验收清单，UI 未验收不得宣称完整更新成功。
 
 在自己的仓库 git pull --ff-only，有冲突不强制覆盖；更新两个插件文件、Skill 与 command。无需新建目录配置；如存在旧 MSG_DOWNLOAD_DIR，展示移除该项的改动并获准，保留其他 env、tui tuple 和旧下载文件，完全退出重启。单独 pull 不更新插件安装副本。依赖未变，已有用户不需 npm ci，初装仍需。见[主 README 提示词](../../README.zh-CN.md)。
 
