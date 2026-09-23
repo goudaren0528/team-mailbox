@@ -237,6 +237,32 @@ export function queryMessages(db, { to, from, unreadOnly, project, cursor, limit
   return { messages, nextCursor, hasMore };
 }
 
+// Metadata-only unread listing: never select text, its derived summary, or BLOB data.
+export function getUnreadMetadata(db, { to, from, cursor, limit }) {
+  const rows = db.prepare(`
+    SELECT m.id, m.from_name as "from", m.title, m.created_at as time,
+           ${ATTACHMENT_META_SELECT}
+    FROM messages m
+    LEFT JOIN attachments a ON a.message_id = m.id
+    WHERE m.to_name = ? AND m.read_at IS NULL
+      AND (? IS NULL OR m.from_name = ?)
+      AND m.id > ?
+    ORDER BY m.id ASC
+    LIMIT ?
+  `).all(to, from ?? null, from ?? null, cursor ?? 0, limit + 1);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    messages: page.map(row => ({
+      id: row.id, from: row.from, title: row.title, time: row.time,
+      attachment: attachmentFromRow(row),
+    })),
+    nextCursor: hasMore ? page[page.length - 1].id : null,
+    hasMore,
+  };
+}
+
 // Counts-only view for the always-visible sidebar: it deliberately selects no text,
 // title, project or message id, so a permanently rendered panel can never leak
 // content. One grouped scan drives the whole response — the WHERE clause matches the

@@ -12,7 +12,26 @@
 | `MSG_ACCESS_CONFIG` | 当前工作目录下 `access.json` |
 | `MSG_MAX_ATTACHMENT_BYTES` | `10485760`（10 MiB）单个附件原始字节上限 |
 
-推荐 DB 和配置均使用绝对路径。`.env` 不自动加载；PowerShell `$env:变量 = '值'` 只影响当前终端及后续子进程。原生中心前台 Ctrl+C 停止，长期托管由管理员采用现有进程管理方式，本项目不提供专用安装器。
+推荐 DB 和配置均使用绝对路径。`.env` 不自动加载；PowerShell `$env:变量 = '值'` 只影响当前终端及后续子进程。原生中心前台 Ctrl+C 停止；下节提供仅供人工审核的 Windows 计划任务安装脚本。
+
+## Windows 开机启动：人工审核后注册（当前尚未注册）
+
+`scripts/run-center-foreground.mjs` 在**同一个 Node 进程**中动态加载 `src/server.js`，用 `createServer().start()` 前台服务，不生成 detached 子进程、不改旧 `log/server.pid`；缺失或零字节 DB、缺 access、端口占用立即拒绝且绝不接管旧服务。启动日志追加在根目录 `log/server.stdout.log` / `log/server.stderr.log`；不记录消息或凭据。默认参数与本机现部署一致：根目录 `D:\team-mailbox`、Node `C:\nvm4w\nodejs\node.exe`、原有 DB `D:\team-mailbox\data\msg.sqlite`、access `D:\team-mailbox\access.json`、`0.0.0.0:18787`；可经安装脚本参数调整。**不得让现有 Startup 快捷方式 `log/launch-center.vbs` 与新任务同时启用**；旧入口检查 `server.pid`，而新入口不更新它，混用会导致冲突。禁用旧 Startup 项需另行明确批准，先备份再操作，本文不授权自动处理。
+
+在目标账户（目前是 ttx）先用普通 PowerShell 预览，之后由**同一个账户**手动提升为管理员审核并运行 `-Apply`：
+
+```powershell
+Set-Location -LiteralPath 'D:\team-mailbox'
+powershell.exe -NoProfile -File .\scripts\install-center-startup.ps1
+# 审核固定盘、实际 Node 可执行文件目标、父目录/文件 ACL、旧 Startup 冲突及任务预览后，在同一账户的提升终端：
+powershell.exe -NoProfile -File .\scripts\install-center-startup.ps1 -Apply
+# 不会立即启动任务；管理员另行核验：
+Export-ScheduledTask -TaskName TeamMailboxCenter
+```
+
+安装器预览不写任务；若同名任务已存在则拒绝覆盖，不获取密码、不自动提升、不修改 ACL。任务计划为 `AtStartup` 加 30 秒随机延迟（不是恰好 30 秒）、当前账户 S4U 无密码登录、`Limited` 权限、`IgnoreNew` 并发策略、无限执行时限、最多 3 次间隔 1 分钟的失败重启，允许电池运行且切换电池不停服，不要求 idle。S4U 是否允许访问 DB/日志目录须管理员检查实际权限；失败重试有限，不保证卡死恢复或任何时间都在线。XML 中核对 `LogonType=S4U`、`RunLevel=LeastPrivilege`、`BootTrigger`/延迟、`MultipleInstancesPolicy=IgnoreNew`、`ExecutionTimeLimit=PT0S`、电池及 restart 字段。不要用 SYSTEM 账户或别人的账户来“绕过”权限。
+
+安装器拒绝网络盘、EFS、检测到的 reparse point 以及对 Everyone / Authenticated Users / Users / Interactive 的宽泛写 ACL；该检查不是完整有效权限证明，管理员仍必须确认 Node 实际解析目标、代码及其可替换父目录、DB/access/log 目录的继承与写入权限和未来 ACL 变化。若预览被 ACL 阻塞，停止并报告；不应自动调整权限或默认绕过。当前部署若已有旧服务占据 18787，新任务不能接管或停止它。禁用旧 Startup、停服、手工启动任务或无人登录的真实重启验收各需单独授权；本轮隔离测试只证明入口可在临时 DB 上工作，不证明计划任务已安装或重启后成功。
 
 ## JSON 映射
 

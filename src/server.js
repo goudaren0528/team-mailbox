@@ -2,8 +2,9 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { CONFIG } from './config.js';
-import { initDb, syncMembers, insertMessage, getMessageById, getAttachmentById, queryMessages, markMessagesRead, getUnreadSummary } from './db.js';
+import { initDb, syncMembers, insertMessage, getMessageById, getAttachmentById, queryMessages, markMessagesRead, getUnreadSummary, getUnreadMetadata } from './db.js';
 import { loadAccessConfig } from './access.js';
+import { createUnreadEvents } from './unread-events.js';
 import { sendMessageSchema, getMsgQuerySchema, readMessageQuerySchema, markReadSchema, attachmentTextQuerySchema } from './validation.js';
 
 function sendJson(res, statusCode, data) {
@@ -104,6 +105,11 @@ export function createServer(options = {}) {
   const dbPath = options.dbPath || process.env.MSG_DB_PATH || CONFIG.dbPath;
   const db = options.db || initDb(dbPath);
   try { syncMembers(db, access.members); } catch (err) { db.close(); throw err; }
+  const unreadEvents = createUnreadEvents(access.members, to => getUnreadSummary(db, { to }));
+  // Notification transport is best effort; a committed write must keep its HTTP result.
+  const notifyUnread = (to, reason) => {
+    try { unreadEvents.publish(to, reason); } catch { /* subscribers were closed on failure */ }
+  };
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -183,6 +189,7 @@ export function createServer(options = {}) {
           deviceName,
           attachment: attachmentRecord,
         });
+        notifyUnread(msgData.to, 'message');
 
         return sendJson(res, 201, {
           id: inserted.id,
@@ -221,6 +228,32 @@ export function createServer(options = {}) {
       // another way to ask about someone else's mail.
       if (method === 'GET' && pathname === '/api/unread-summary') {
         return sendJson(res, 200, getUnreadSummary(db, { to: req.member.name }));
+      }
+
+      if (method === 'GET' && pathname === '/api/unread-events') {
+        if (req.url.includes('?')) return sendJson(res, 400, { error: 'Query parameters are not supported' });
+        const result = unreadEvents.subscribe(req, res, req.member.name, req.headers['last-event-id']);
+        if (result) return sendJson(res, result.status, { error: result.error });
+        return;
+      }
+
+      // The only selectable content is metadata for the authenticated inbox.
+      if (method === 'GET' && pathname === '/api/unread-metadata') {
+        const params = parsedUrl.searchParams;
+        const keys = [...params.keys()];
+        const validKeys = keys.every(key => ['from', 'cursor', 'limit'].includes(key) && params.getAll(key).length === 1);
+        const from = params.get('from');
+        const cursorRaw = params.get('cursor');
+        const limitRaw = params.get('limit');
+        const decimal = value => /^(0|[1-9]\d*)$/.test(value);
+        const cursor = cursorRaw === null ? 0 : Number(cursorRaw);
+        const limit = limitRaw === null ? 10 : Number(limitRaw);
+        if (!validKeys || (from !== null && !/^[\p{L}\p{N}_-]{1,32}$/u.test(from)) ||
+            (cursorRaw !== null && (!decimal(cursorRaw) || !Number.isSafeInteger(cursor))) ||
+            (limitRaw !== null && (!decimal(limitRaw) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100))) {
+          return sendJson(res, 400, { error: 'Query parameter validation failed' });
+        }
+        return sendJson(res, 200, getUnreadMetadata(db, { to: req.member.name, from, cursor, limit }));
       }
 
       // GET /api/messages/:id (read message chunk)
@@ -268,6 +301,7 @@ export function createServer(options = {}) {
             markedRead = false;
           }
         }
+        if (markedRead) notifyUnread(req.member.name, 'read');
 
         return sendJson(res, 200, {
           id: msg.id,
@@ -367,6 +401,7 @@ export function createServer(options = {}) {
           to: req.member.name,
           ids: parsed.data.ids,
         });
+        if (result.markedCount > 0) notifyUnread(req.member.name, 'read');
 
         return sendJson(res, 200, result);
       }
@@ -395,6 +430,7 @@ export function createServer(options = {}) {
     },
     close() {
       return new Promise((resolve) => {
+        unreadEvents.close();
         server.close(() => {
           try {
             db.close();
